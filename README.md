@@ -1,47 +1,65 @@
 # claude-code-jev-smart-router
 
-Claude Code picks one model per session. Pin Opus and you pay top-tier prices to
-read files and write commit messages. Pin something cheap and it quietly misses
-things in the security review. A session is not one kind of work.
+An HTTP proxy for Claude Code that selects the Anthropic model per request rather
+than per session. It reads each request, classifies the work with the Jev API,
+and forwards upstream with the `model` field set to the selected tier. Nothing
+else in the request is modified, and response streams are relayed unchanged.
 
-This proxy decides per request. It sits between Claude Code and the Anthropic
-API, works out what each request is actually doing, and picks the model for that
-one request. Nothing else about the request changes, and the response streams
-back untouched.
+Claude Code sets one model when a session starts and uses it for every request in
+the agentic loop: file reads, greps, test runs, commit messages, and the steps
+that need capability. Per-request selection matches the tier to the request.
 
-**Over 63 measured runs on six tasks it met every requirement Opus met, for 72%
-less money and in under half the time.** Finding planted bugs, finding planted
-vulnerabilities, passing a hidden test suite, and building apps that a browser
-then drove and used. [Results](#results).
+Measured over 63 runs on six tasks, the proxy met every requirement that pinned
+Opus met, at 72% lower cost and 2.1x faster. Tasks included finding planted
+defects, finding planted vulnerabilities, passing a hidden test suite, and
+building applications that were then driven in a browser. [Results](#results).
 
-## What Jev is
+## Classification
 
-The classifier is [Jev](https://console.typesafe.ai), from TypeSafe. It is not a
-generative model being asked a question in prose. You send it the facts of the
-session and a set of typed questions, and every answer comes back in one round
-trip:
+The classifier is [Jev](https://console.typesafe.ai), from TypeSafe. It is a
+classification model rather than a generative one: the proxy sends the extracted
+session facts and a set of typed questions, and all answers return in a single
+round trip. A user turn sends 15 questions; a mid-run recheck sends the 12 that
+do not depend on a new user message.
 
-```json
-{"phase":            {"choice": "debug", "confidence": 0.82},
- "next_step_demand": {"score": 2,        "confidence": 0.71},
- "risk_surface":     {"noul": 0.88,      "confidence": 0.90}}
+```http
+POST https://api.typesafe.ai/v1/systemone
+Authorization: Bearer $TYPESAFE_API_KEY
+Content-Type: application/json
+
+{"model": "jev-latest",
+ "state": "<extracted session facts>",
+ "questions": { ... }}
 ```
 
-`choice` is a label from a set you supply, `score` an ordinal, `noul` a
-likelihood between 0 and 1, each with its own confidence attached.
+```json
+{"answers": {
+   "phase":            {"choice": "debug", "confidence": 0.82},
+   "next_step_demand": {"score": 2,        "confidence": 0.71},
+   "risk_surface":     {"noul": 0.88,      "confidence": 0.90}
+ },
+ "usage": {"input_tokens": 501}}
+```
 
-**One decision takes 256 ms and costs $0.000081.** A cent buys 123 of them.
-Across the whole benchmark, classifying cost $0.0087 to route $21.77 of work.
+`choice` returns a label from the set supplied with the question, `score` an
+ordinal, `noul` a likelihood between 0 and 1. Each answer carries its own
+confidence.
 
-That is the part worth stealing. Routing per request only works if deciding is
-far cheaper than the thing being decided. Prompting a general-purpose model with
-"which tier should serve this?" costs seconds and a token bill every time, which
-eats the saving it was meant to find. A classifier that answers fifteen questions
-in a quarter of a second fits in the request path without anyone noticing it is
-there.
+One decision takes 256 ms and costs $0.000081. Across the benchmark,
+classification cost $0.0087 to route $21.77 of work.
 
-Everything else here is ordinary: a FastAPI proxy, a regex or two, and a
-function full of `if` statements deciding which model gets the turn.
+Per-request routing requires the classification to cost materially less than the
+request it routes. A general-purpose model prompted to classify adds seconds of
+latency and a token bill to every request.
+
+Confidence is applied rather than reported. When confidence in `phase` falls
+below `ROUTER_MIN_CONFIDENCE` the answer is discarded and the tool-derived phase
+hint is used instead; demand adjustments are gated the same way. The decision is
+split into many small questions because the model is calibrated per individual
+judgment; they are combined in `pick_tier_v2`.
+
+Any error, timeout or non-200 response returns no answers, at which point the
+session keeps its current tier or the request forwards as received.
 
 ## Installation
 
@@ -178,31 +196,6 @@ the `model` field rewritten.
 
 On a Pro, Max or Team subscription there is no per-token bill, so routing
 consumes less of the plan's allowance rather than reducing a charge.
-
-## Calling the classifier
-
-The intro covers what Jev returns. The request carries the extracted session
-facts and every question in one POST. A user turn sends 15 questions; a mid-run
-recheck sends the 12 that do not depend on a new user message:
-
-```http
-POST https://api.typesafe.ai/v1/systemone
-Authorization: Bearer $TYPESAFE_API_KEY
-Content-Type: application/json
-
-{"model": "jev-latest",
- "state": "<extracted session facts>",
- "questions": { ... }}
-```
-
-Confidence is used, not displayed. When confidence in `phase` falls below
-`ROUTER_MIN_CONFIDENCE` that answer is discarded and the tool-derived phase hint
-is used instead; demand adjustments are gated the same way. The decision is split
-into many small questions because the model is calibrated per individual
-judgment, and they are combined afterwards in `pick_tier_v2`.
-
-Any error, timeout or non-200 returns no answers, at which point the session
-keeps its current tier or the request forwards as received.
 
 ## Status
 
