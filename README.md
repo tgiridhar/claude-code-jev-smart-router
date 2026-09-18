@@ -111,11 +111,14 @@ Failure is not fatal. The call has a timeout, and any error, timeout or
 non-200 response returns no answers, at which point the session keeps its current
 tier or the request forwards as received.
 
-## Example run
+## Measured runs
+
+Two consecutive tasks, Claude Code configured with Opus in both. Opus served
+neither.
+
+### Run 1: write the app
 
 Prompt: `make a to do app in single html`. Five requests, 31 seconds wall clock.
-
-Claude Code was configured with Opus. Opus served none of it.
 
 | # | Model | Decision |
 | --- | --- | --- |
@@ -125,31 +128,81 @@ Claude Code was configured with Opus. Opus served none of it.
 | 4 | haiku | utility call (`max_tokens=64`), pinned, session state untouched |
 | 5 | sonnet | agentic continuation, held (no event, no classify) |
 
-| Measure | Value |
-| --- | --- |
-| Spent through the router | $0.4299 |
-| Same tokens pinned to Opus | $0.8533 |
-| Difference | $0.4233 (50%) |
-| Classifier | $0.0001 over 2 calls |
-| Input served from cache | 40% |
-| Classifier latency, median | 294 ms |
+Three documented behaviours are visible:
 
-Four things in that ledger are the documented behaviour firing:
+- **The canonical cap.** A to-do app in one HTML file is a canonical artifact, so
+  the tier was capped one rung below the top. That is why Opus never ran, and the
+  cap plus its confidence appear in the reason string.
+- **The utility pin.** Two of the five were sidecar calls filtered by
+  `max_tokens` and kept out of session state.
+- **The continuation hold.** One tool-result turn was held without a classifier
+  call because no recheck trigger fired.
 
-- **Opus never ran.** A to-do app in one HTML file is a canonical artifact, so the
-  `canonical` rule capped the tier one rung below the top. The cap and its
-  confidence appear in the reason string.
-- **Two of five requests reached the classifier.** Two were sidecar calls pinned
-  by `max_tokens` and excluded from session state; one was a tool-result
-  continuation held without a classify because no recheck trigger fired.
-- **294 ms median against 31 s of work** is well under 1% of wall clock.
-- **$0.0001 of classifier spend against $0.4299 routed** is the cost of the
-  decision against the cost of the work.
+Two of five requests reached the classifier.
 
-Read the 50% as an upper bound, which is how the dashboard labels it. It prices
-the same token counts at Opus rates, and a model that needed more turns would not
-have produced the same token counts. This is one task in one session, not a
-benchmark.
+### Run 2: document the app
+
+Prompt: `create documentation for @todo.html`. Eight requests, 57 seconds wall
+clock.
+
+| # | Model | Decision |
+| --- | --- | --- |
+| 1 | haiku | explore phase, effort medium, first turn |
+| 2 | haiku | explore phase, effort medium, unchanged |
+| 3 | haiku | explore phase, effort medium, unchanged |
+| 4 | sonnet | explore phase, user asked for extended thinking, effort medium, **upgraded** |
+| 5 | sonnet | agentic continuation, held (no event, no classify) |
+| 6 | sonnet | agentic continuation, held (no event, no classify) |
+| 7 | sonnet | agentic continuation, held (no event, no classify) |
+| 8 | sonnet | agentic continuation, held (no event, no classify) |
+
+![The router dashboard after run 2](docs/img/dashboard-run2.png)
+
+This run exercises different rules than the first:
+
+- **Explore starts cheap.** The `explore` phase has the lowest default tier, so
+  reading the file and looking around the directory ran on Haiku.
+- **An upgrade fired mid-run.** The request carried a raised thinking budget,
+  which floors the tier at the middle rung (`jev_ontology.py:814`, the source of
+  that reason string). Upgrades are applied immediately without pricing the cache
+  rebuild, which is the documented asymmetry: no token arithmetic justifies
+  under-serving a request that asked for more thinking.
+- **Four consecutive holds.** Once writing began, four tool-result turns ran at
+  93% to 98% cached with no classifier call between them. The continuation hold
+  and the warm cache are both doing their job here.
+- **Effort steering was on**, visible as `effort medium` in the reason strings.
+  That lowers effort on the current model rather than switching models, so the
+  cache survives.
+
+Four of eight requests reached the classifier.
+
+### Side by side
+
+| | Run 1 | Run 2 |
+| --- | --- | --- |
+| Wall clock | 31 s | 57 s |
+| Requests | 5 | 8 |
+| Requests classified | 2 | 4 |
+| Input served from cache | 40% | 93% |
+| Spent through the router | $0.4299 | $0.3148 |
+| Same tokens pinned to Opus | $0.8533 | $0.5279 |
+| Difference | $0.4233 (50%) | $0.2128 (40%) |
+| Classifier spend | $0.0001 | $0.0003 |
+| Classifier latency, median | 294 ms | 243 ms |
+
+### How to read these
+
+The percentages are upper bounds, which is how the dashboard labels them. They
+price the same token counts at Opus rates, and a model that needed more turns
+would not have produced the same token counts.
+
+The two runs differ, and the sample is far too small to explain why. Run 2 sent a
+larger share of its completed requests to the middle tier, which narrows the gap
+to an all-Opus baseline. That is arithmetic, not a finding.
+
+Two tasks in two sessions is not a benchmark. It is a demonstration that the
+machinery runs, that the documented rules fire, and that classification costs
+roughly a thousandth of what the work costs.
 
 ## Status
 
@@ -157,8 +210,8 @@ Proof of concept. Specifically:
 
 - Requires a TypeSafe API key. Without one, every request forwards unrouted.
 - The thresholds in the tier policy are unfitted defaults, not measured values.
-- Savings are not benchmarked. One measured run is in
-  [Example run](#example-run). On other workloads prompt caching can make
+- Savings are not benchmarked. Two measured runs are in
+  [Measured runs](#measured-runs). On other workloads prompt caching can make
   per-request routing more expensive than a single pinned model. Measure before
   relying on it.
 - The default prices in `ROUTER_PRICES` are list prices recorded at the time of
