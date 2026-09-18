@@ -1,9 +1,43 @@
 # claude-code-jev-smart-router
 
-An HTTP proxy for Claude Code. It intercepts `POST /v1/messages`, classifies what
-the request is doing, rewrites the `model` field to a cheaper model when the work
-allows it, and forwards to `api.anthropic.com`. Only that field changes. Response
-streams are relayed unmodified.
+An HTTP proxy for Claude Code. It intercepts `POST /v1/messages`, works out what
+the request is actually doing, rewrites the `model` field to a cheaper model when
+the work allows it, and forwards to `api.anthropic.com`. Only that field changes.
+Response streams are relayed unmodified.
+
+**Over 63 measured runs on six tasks it met every requirement Opus met, for 72%
+less money and in under half the time.** Finding planted bugs, finding planted
+vulnerabilities, passing a hidden test suite, building apps that a browser then
+drove and used. [Results](#results).
+
+## What Jev is
+
+The classifier is [Jev](https://console.typesafe.ai), from TypeSafe. It is not a
+generative model being asked a question in prose. You send it the facts of the
+session and a set of typed questions, and every answer comes back in one round
+trip:
+
+```json
+{"phase":            {"choice": "debug", "confidence": 0.82},
+ "next_step_demand": {"score": 2,        "confidence": 0.71},
+ "risk_surface":     {"noul": 0.88,      "confidence": 0.90}}
+```
+
+`choice` is a label from a set you supply, `score` an ordinal, `noul` a
+likelihood between 0 and 1, each with its own confidence attached.
+
+**One decision takes 256 ms and costs $0.000081.** A cent buys 123 of them.
+Across the whole benchmark, classifying cost $0.0087 to route $21.77 of work.
+
+That is the part worth stealing. Routing per request only works if deciding is
+far cheaper than the thing being decided. Prompting a general-purpose model with
+"which tier should serve this?" costs seconds and a token bill every time, which
+eats the saving it was meant to find. A classifier that answers fifteen questions
+in a quarter of a second fits in the request path without anyone noticing it is
+there.
+
+Everything else here is ordinary: a FastAPI proxy, a regex or two, and a
+function full of `if` statements deciding which model gets the turn.
 
 ## Installation
 
@@ -141,18 +175,11 @@ the `model` field rewritten.
 On a Pro, Max or Team subscription there is no per-token bill, so routing
 consumes less of the plan's allowance rather than reducing a charge.
 
-## The classifier
+## Calling the classifier
 
-Per-request routing needs classification inside the request path. A
-general-purpose model prompted to classify would add seconds and a token bill to
-every request.
-
-Jev is a classification model rather than a generative one, served by TypeSafe at
-`api.typesafe.ai/v1/systemone`.
-
-**One round trip for the whole question set.** Extracted facts and every question
-go in a single POST. A user turn sends 15 questions; a mid-run recheck sends the
-12 that do not depend on a new user message:
+The intro covers what Jev returns. The request carries the extracted session
+facts and every question in one POST. A user turn sends 15 questions; a mid-run
+recheck sends the 12 that do not depend on a new user message:
 
 ```http
 POST https://api.typesafe.ai/v1/systemone
@@ -164,26 +191,11 @@ Content-Type: application/json
  "questions": { ... }}
 ```
 
-**Typed answers.** Each question declares its type and the response supplies that
-type. `choice` returns a label from the definition set sent with the question,
-`score` returns an ordinal, `noul` returns a likelihood between 0 and 1:
-
-```json
-{"answers": {
-   "phase":            {"choice": "debug", "confidence": 0.82},
-   "next_step_demand": {"score": 2,        "confidence": 0.71},
-   "risk_surface":     {"noul": 0.88,      "confidence": 0.90}
- },
- "usage": {"input_tokens": 501}}
-```
-
-(Abridged. Field names are as the router reads them; values are illustrative.)
-
-**Per-answer confidence.** When confidence in `phase` falls below
-`ROUTER_MIN_CONFIDENCE`, that answer is discarded and the deterministic
-tool-derived phase hint is used instead. Demand adjustments are gated the same
-way. The decision is split into many small questions because the model is
-calibrated per individual judgment, and combined afterwards in `pick_tier_v2`.
+Confidence is used, not displayed. When confidence in `phase` falls below
+`ROUTER_MIN_CONFIDENCE` that answer is discarded and the tool-derived phase hint
+is used instead; demand adjustments are gated the same way. The decision is split
+into many small questions because the model is calibrated per individual
+judgment, and they are combined afterwards in `pick_tier_v2`.
 
 Any error, timeout or non-200 returns no answers, at which point the session
 keeps its current tier or the request forwards as received.
