@@ -7,25 +7,28 @@ streams are relayed unmodified.
 
 ## Results
 
-**72% cheaper. Same score on every task.**
+**Met every requirement. 72% cheaper. 2.1x faster.**
 
 Six tasks, three runs each against pinned Opus, 63 runs in total. Claude Code was
 configured with Opus throughout; the proxy decided what actually served each
 request. Medians of three runs.
 
-| Task | Opus score | Router score | Opus cost | Router cost | Saving | Opus time | Router time |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `bugfind` find 6 planted defects in an order and refund module | 6/6 | **6/6** | $0.5486 | **$0.1196** | **78%** | 122 s | **50 s** |
-| `secfind` find 6 planted vulnerabilities in a Flask service | 6/6 | **6/6** | $0.5045 | **$0.1194** | **76%** | 120 s | **38 s** |
-| `algo` implement a prose spec, graded by 20 hidden tests | 20/20 | **20/20** | $0.2748 | **$0.1082** | **61%** | 48 s | **37 s** |
-| `todo` build a to-do app in one self-contained HTML file | 9/9 | **9/9** | $0.2662 | **$0.1094** | **59%** | 38 s | **30 s** |
-| `pelican` draw a pelican riding a bicycle as hand-authored SVG | 5/5 | **5/5** | $0.3565 | **$0.0872** | **76%** | 91 s | **23 s** |
-| `datasci` generate 5000 rows of sales data, analyse it, write it up | 10/10 | **10/10** | $0.8573 | **$0.2432** | **72%** | 192 s | **107 s** |
-| **All six** | | | **$2.81** | **$0.79** | **72%** | | |
+| Task | Req. met, Opus | Req. met, Router | Cost, Opus | Cost, Router | Saving | Time, Opus | Time, Router | Faster |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `bugfind` find 6 planted defects in an order and refund module | 6/6 | **6/6** | $0.5486 | **$0.1196** | **78%** | 122 s | **50 s** | **2.5x** |
+| `secfind` find 6 planted vulnerabilities in a Flask service | 6/6 | **6/6** | $0.5045 | **$0.1194** | **76%** | 120 s | **38 s** | **3.1x** |
+| `algo` implement a prose spec, graded by 20 hidden tests | 20/20 | **20/20** | $0.2748 | **$0.1082** | **61%** | 48 s | **37 s** | **1.3x** |
+| `todo` build a to-do app in one self-contained HTML file | 9/9 | **9/9** | $0.2662 | **$0.1094** | **59%** | 38 s | **30 s** | **1.3x** |
+| `pelican` draw a pelican riding a bicycle as hand-authored SVG | 5/5 | **5/5** | $0.3565 | **$0.0872** | **76%** | 91 s | **23 s** | **3.9x** |
+| `datasci` generate 5000 rows of sales data, analyse it, write it up | 10/10 | **10/10** | $0.8573 | **$0.2432** | **72%** | 192 s | **107 s** | **1.8x** |
+| **All six** | | | **$2.81** | **$0.79** | **72%** | **610 s** | **284 s** | **2.1x** |
 
-Score is requirements met. The first three tasks are graded against defects
-planted before the task ran or a hidden test suite; the last three by driving the
-artifact.
+The router met every requirement on every task, for 28% of the money in 47% of
+the time.
+
+Requirements are counted, not judged. The first three tasks are graded against
+defects planted before the task ran or a hidden test suite; the last three by
+driving the artifact.
 
 Classification cost $0.0087 to route $21.77 of work, at a median 266 ms per
 decision.
