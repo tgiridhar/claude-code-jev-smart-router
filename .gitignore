@@ -16,5 +16,13 @@ venv/
 # macOS
 .DS_Store
 
+# Benchmark raw artifacts: task outputs, traces, prompts.
+# Only bench/RESULTS.md is published.
+bench/runs/
+
 # Playwright MCP scratch output
 .playwright-mcp/
+
+# Benchmark browser driver, installed by npm
+bench/fr/node_modules/
+bench/fr/package-lock.json

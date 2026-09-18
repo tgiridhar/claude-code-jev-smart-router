@@ -1,0 +1,74 @@
+{
+  "measured_at": "2026-09-18T07:54:56",
+  "note": "solved from observed tokens against Claude Code's own cost figure",
+  "observations": [
+    {
+      "alias": "haiku",
+      "cache_ttl": "1h",
+      "cc_cost": 0.019691,
+      "cost_basis": "list",
+      "input_rate": 1.0,
+      "router_cost": 0.012742,
+      "served": "claude-haiku-4-5-20251001",
+      "tokens": {
+        "cache_create": 9266,
+        "cache_read": 0,
+        "cost": 0.012742,
+        "inp": 909,
+        "out": 50
+      }
+    },
+    {
+      "alias": "sonnet",
+      "cache_ttl": "1h",
+      "cc_cost": 0.050854,
+      "cost_basis": "list",
+      "input_rate": 2.0,
+      "router_cost": 0.049094,
+      "served": "claude-sonnet-5",
+      "tokens": {
+        "cache_create": 12083,
+        "cache_read": 0,
+        "cost": 0.049094,
+        "inp": 1176,
+        "out": 17
+      }
+    },
+    {
+      "alias": "opus",
+      "cache_ttl": "1h",
+      "cc_cost": 0.072265,
+      "cost_basis": "list",
+      "input_rate": 5.0,
+      "router_cost": 0.047549,
+      "served": "claude-opus-5",
+      "tokens": {
+        "cache_create": 6591,
+        "cache_read": 0,
+        "cost": 0.047549,
+        "inp": 1176,
+        "out": 19
+      }
+    }
+  ],
+  "table": {
+    "claude-haiku-4-5-20251001": {
+      "cache_read_mult": 0.1,
+      "cache_write_mult": 2.0,
+      "in": 1.0,
+      "out": 5.0
+    },
+    "claude-opus-5": {
+      "cache_read_mult": 0.1,
+      "cache_write_mult": 2.0,
+      "in": 5.0,
+      "out": 25.0
+    },
+    "claude-sonnet-5": {
+      "cache_read_mult": 0.1,
+      "cache_write_mult": 2.0,
+      "in": 2.0,
+      "out": 10.0
+    }
+  }
+}
