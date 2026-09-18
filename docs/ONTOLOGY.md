@@ -24,30 +24,30 @@ sent those values and asked only for judgments that regex cannot produce.
 
 ```mermaid
 flowchart LR
-    body["request body<br/><small>full history, each request</small>"]
+    body["request body<br/>full history, each request"]
 
     subgraph facts["Computed in code, &lt;1ms, deterministic"]
         direction TB
-        f1["<b>TOOL_KINDS</b><br/><small>29 tool names &rarr; 11 kinds</small>"]
-        f2["<b>BASH_CLASSES</b><br/><small>8 classes, checked in order</small>"]
-        f3["<b>FAIL_TEXT / PASS_TEXT</b><br/><small>check outcome</small>"]
-        f4["<b>_failure_signature</b><br/><small>sha1 of normalized<br/>error line</small>"]
-        f5["<b>RISK_SURFACE</b><br/><small>regex over paths<br/>and identifiers</small>"]
-        f6["<b>system-reminder parse</b><br/><small>plan mode, todos,<br/>CLAUDE.md, skills</small>"]
+        f1["TOOL_KINDS<br/>29 tool names &rarr; 11 kinds"]
+        f2["BASH_CLASSES<br/>8 classes, checked in order"]
+        f3["FAIL_TEXT / PASS_TEXT<br/>check outcome"]
+        f4["_failure_signature<br/>sha1 of normalized<br/>error line"]
+        f5["RISK_SURFACE<br/>regex over paths<br/>and identifiers"]
+        f6["system-reminder parse<br/>plan mode, todos,<br/>CLAUDE.md, skills"]
     end
 
     subgraph ledger["extract_ledger output: six sections"]
         direction TB
-        l1["<b>harness</b><br/><small>agent_role, plan_mode, thinking_budget,<br/>lsp_available, mcp_servers, skills_loaded</small>"]
-        l2["<b>unit</b><br/><small>opening_request, latest_human_ask,<br/>human_turns, steps_in_unit, todos</small>"]
-        l3["<b>activity</b><br/><small>tool_kinds, bash_classes, files_edited,<br/>lines_changed_est, searches, subagents</small>"]
-        l4["<b>verification</b><br/><small>check_runs, last_check,<br/>consecutive_failures, same_failure_repeats,<br/>edits_since_last_check</small>"]
-        l5["<b>risk</b><br/><small>risk_surface_hits,<br/>outward_or_destructive_commands,<br/>mcp_write_calls</small>"]
-        l6["<b>recent_steps</b><br/><small>per-step records</small>"]
+        l1["harness<br/>agent_role, plan_mode, thinking_budget,<br/>lsp_available, mcp_servers, skills_loaded"]
+        l2["unit<br/>opening_request, latest_human_ask,<br/>human_turns, steps_in_unit, todos"]
+        l3["activity<br/>tool_kinds, bash_classes, files_edited,<br/>lines_changed_est, searches, subagents"]
+        l4["verification<br/>check_runs, last_check,<br/>consecutive_failures, same_failure_repeats,<br/>edits_since_last_check"]
+        l5["risk<br/>risk_surface_hits,<br/>outward_or_destructive_commands,<br/>mcp_write_calls"]
+        l6["recent_steps<br/>per-step records"]
     end
 
-    jev["<b>Jev API</b><br/><small>15 questions</small>"]
-    pol["<b>pick_tier_v2</b><br/><small>conditionals</small>"]
+    jev["Jev API<br/>15 questions"]
+    pol["pick_tier_v2<br/>conditionals"]
 
     body --> facts --> ledger
     ledger -->|"state document"| jev
@@ -122,31 +122,31 @@ flowchart LR
     a6["review"]
     a7["output volume"]
 
-    root --> a1 --> q1["<b>phase</b><br/><small>choice, 9 values</small>"]
+    root --> a1 --> q1["phase<br/>choice, 9 values"]
 
     root --> a2
-    a2 --> q2["<b>next_step_demand</b><br/><small>score 0-2</small>"]
-    a2 --> q3["<b>cross_cutting</b><br/><small>noul</small>"]
-    a2 --> q4["<b>repo_specific</b><br/><small>noul</small>"]
-    a2 --> q5["<b>canonical</b><br/><small>noul</small>"]
+    a2 --> q2["next_step_demand<br/>score 0-2"]
+    a2 --> q3["cross_cutting<br/>noul"]
+    a2 --> q4["repo_specific<br/>noul"]
+    a2 --> q5["canonical<br/>noul"]
 
-    root --> a3 --> q6["<b>spec_completeness</b><br/><small>score 0-2</small>"]
+    root --> a3 --> q6["spec_completeness<br/>score 0-2"]
 
     root --> a4
-    a4 --> q7["<b>oracle_in_loop</b><br/><small>noul</small>"]
-    a4 --> q8["<b>risk_surface</b><br/><small>noul</small>"]
-    a4 --> q9["<b>irreversible</b><br/><small>noul</small>"]
+    a4 --> q7["oracle_in_loop<br/>noul"]
+    a4 --> q8["risk_surface<br/>noul"]
+    a4 --> q9["irreversible<br/>noul"]
 
     root --> a5
-    a5 --> q10["<b>trajectory</b><br/><small>choice, 6 values</small>"]
-    a5 --> q11["<b>unverified_confidence</b><br/><small>noul</small>"]
-    a5 --> q12["<b>user_correcting</b><br/><small>noul</small>"]
+    a5 --> q10["trajectory<br/>choice, 6 values"]
+    a5 --> q11["unverified_confidence<br/>noul"]
+    a5 --> q12["user_correcting<br/>noul"]
 
-    root --> a6 --> q13["<b>review_depth</b><br/><small>choice, 4 values</small>"]
+    root --> a6 --> q13["review_depth<br/>choice, 4 values"]
 
     root --> a7
-    a7 --> q14["<b>gen_volume</b><br/><small>score 0-2</small>"]
-    a7 --> q15["<b>is_followup</b><br/><small>noul</small>"]
+    a7 --> q14["gen_volume<br/>score 0-2"]
+    a7 --> q15["is_followup<br/>noul"]
 
     style a4 fill:#fef2f2,stroke:#cb4136,stroke-width:2px
     style q7 fill:#fef2f2,stroke:#cb4136

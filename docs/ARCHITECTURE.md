@@ -19,19 +19,19 @@ flowchart TB
     dev(["Developer"])
 
     subgraph local["Local machine"]
-        cc["<b>Claude Code</b><br/><small>ANTHROPIC_BASE_URL points here</small>"]
+        cc["Claude Code<br/>ANTHROPIC_BASE_URL points here"]
         subgraph proxy["jev_router :8787"]
             api["/v1/messages"]
-            ont["<b>jev_ontology</b><br/><small>extract_ledger, pick_tier_v2</small>"]
-            econ["<b>cache cost</b><br/><small>switch_delta,<br/>apply_cache_policy</small>"]
-            tel["<b>telemetry</b><br/><small>UsageSniffer, metrics</small>"]
+            ont["jev_ontology<br/>extract_ledger, pick_tier_v2"]
+            econ["cache cost<br/>switch_delta,<br/>apply_cache_policy"]
+            tel["telemetry<br/>UsageSniffer, metrics"]
             ui["/dashboard"]
         end
-        tr[("trace files<br/><small>opt-in, gitignored</small>")]
+        tr[("trace files<br/>opt-in, gitignored")]
     end
 
-    ts["<b>api.typesafe.ai</b><br/>/v1/systemone<br/><small>classifier</small>"]
-    an["<b>api.anthropic.com</b><br/><small>Haiku / Sonnet / Opus</small>"]
+    ts["api.typesafe.ai<br/>/v1/systemone<br/>classifier"]
+    an["api.anthropic.com<br/>Haiku / Sonnet / Opus"]
 
     dev --> cc
     cc <--> api
@@ -164,7 +164,7 @@ cheaper than staying.
 flowchart TB
     subgraph want["Stage 1: tier selection (jev_ontology)"]
         direction LR
-        w1["phase<br/><small>default tier</small>"] --> w2["demand<br/><small>&plusmn;1, clamped</small>"] --> w3["error cost<br/><small>oracle, risk, irreversible</small>"] --> w4["trajectory<br/><small>thrashing, drifting,<br/>user_correcting</small>"]
+        w1["phase<br/>default tier"] --> w2["demand<br/>&plusmn;1, clamped"] --> w3["error cost<br/>oracle, risk, irreversible"] --> w4["trajectory<br/>thrashing, drifting,<br/>user_correcting"]
     end
 
     want -->|"tier, safety, sticky, effort"| gate
@@ -173,7 +173,7 @@ flowchart TB
         direction TB
         g0{"direction?"}
         g0 -->|upgrade| g1["apply immediately,<br/>no pricing"]
-        g0 -->|downgrade| g2{"cache warm?<br/><small>same model, request<br/>within 240s</small>"}
+        g0 -->|downgrade| g2{"cache warm?<br/>same model, request<br/>within 240s"}
         g2 -->|cold| g3["apply"]
         g2 -->|warm| g4["compute:<br/>per_turn &#215; horizon<br/>vs prefix &#215; 1.25 &#215; in_price"]
         g4 --> g5{"net positive?"}
@@ -181,10 +181,10 @@ flowchart TB
         g5 -->|no| g7["hold, log arithmetic"]
     end
 
-    safety["<b>safety floor</b><br/><small>set by irreversible, risk with<br/>no oracle, thrashing,<br/>user_correcting</small>"]
+    safety["safety floor<br/>set by irreversible, risk with<br/>no oracle, thrashing,<br/>user_correcting"]
     safety ==>|"blocks downgrade<br/>below this tier"| gate
 
-    effort["<b>effort steering</b><br/><small>same model, lower effort.<br/>Cache unaffected.</small>"]
+    effort["effort steering<br/>same model, lower effort.<br/>Cache unaffected."]
     gate -.->|"alternative when a<br/>switch is not cheaper"| effort
 
     style want fill:#ecfdf5,stroke:#0c8a6c,stroke-width:2px

@@ -109,13 +109,13 @@ block tools.
 ```mermaid
 flowchart LR
     dev["Developer"]
-    cc["Claude Code<br/><small>ANTHROPIC_BASE_URL</small>"]
-    r["<b>jev_router</b><br/><small>FastAPI proxy, :8787</small>"]
-    led["<b>extract_ledger</b><br/><small>pure code, &lt;1ms</small>"]
-    jev["<b>Jev API</b><br/><small>api.typesafe.ai<br/>15 questions, ~100ms</small>"]
-    up["<b>api.anthropic.com</b><br/><small>selected model</small>"]
-    dash["Dashboard<br/><small>/dashboard</small>"]
-    tr[("Trace files<br/><small>opt-in, local</small>")]
+    cc["Claude Code<br/>ANTHROPIC_BASE_URL"]
+    r["jev_router<br/>FastAPI proxy, :8787"]
+    led["extract_ledger<br/>pure code, &lt;1ms"]
+    jev["Jev API<br/>api.typesafe.ai<br/>15 questions, ~100ms"]
+    up["api.anthropic.com<br/>selected model"]
+    dash["Dashboard<br/>/dashboard"]
+    tr[("Trace files<br/>opt-in, local")]
 
     dev -->|prompt| cc
     cc -->|"POST /v1/messages"| r
