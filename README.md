@@ -1,6 +1,51 @@
 # claude-code-jev-smart-router
 
-An HTTP proxy for Claude Code that selects the Claude model per request.
+An HTTP proxy for Claude Code that selects the Claude model per request, to
+reduce cost and latency.
+
+## Why
+
+A coding agent pins one model for an entire session. That model handles every
+step: the architectural decision and the `grep`, the security review and the
+commit message. Most steps in an agentic loop are not the hard part.
+
+**Cost.** Cheaper models are cheaper by a wide margin, per token, in both
+directions. Every step served by a cheaper model that did not need an expensive
+one is most of that step's cost avoided. Searching, reading a test result and
+writing a commit message are the common case in a long session, not the
+exception.
+
+**Latency.** Smaller models return faster, so the same reasoning applies to
+wall-clock time. Effort level matters more than model choice here, since effort
+drives how many agentic turns a step takes. The proxy can lower effort on the
+current model instead of switching models, which cuts turns without invalidating
+the prompt cache.
+
+**Usage limits.** On a Pro, Max or Team subscription there is no bill to reduce.
+The same routing conserves usage limit instead, so a plan covers more work before
+it throttles.
+
+Classification costs a small fraction of a cent per request and adds well under a
+second to the turn.
+
+### Constraint: prompt caching
+
+Prompt caching is what makes naive per-request routing lose. Each model keeps its
+own cache, so switching mid-conversation makes the new model re-read the whole
+conversation prefix at full input price. On a long session that prefix is most of
+the token volume, and a router that switches on every turn can cost several times
+what pinning one model costs.
+
+So every switch is priced before it is made, and a switch that does not pay for
+itself within a few turns does not happen. Selecting the right model is the
+straightforward half of this; deciding whether moving to it is affordable is the
+rest.
+
+Savings here are unmeasured. The mechanism is sound, but whether routing wins on
+a particular workload depends on that workload.
+[Measure it](#measuring-cost-impact).
+
+## How it works
 
 It listens on `ANTHROPIC_BASE_URL`, intercepts `POST /v1/messages`, extracts
 facts about the session from the request body, sends those facts to the Jev API
@@ -23,6 +68,8 @@ Proof of concept. Specifically:
 - The thresholds in the tier policy are unfitted defaults, not measured values.
 - Savings are unverified. Prompt caching can make per-request routing more
   expensive than a single pinned model. Measure before relying on it.
+- The default prices in `ROUTER_PRICES` are list prices recorded at the time of
+  writing. Verify them before trusting the breakeven arithmetic.
 
 ## Routing logic
 
