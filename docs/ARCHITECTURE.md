@@ -173,9 +173,9 @@ flowchart TB
         direction TB
         g0{"direction?"}
         g0 -->|upgrade| g1["apply immediately,<br/>no pricing"]
-        g0 -->|downgrade| g2{"cache warm?<br/>same model, request<br/>within 240s"}
+        g0 -->|downgrade| g2{"cache warm?<br/>same model, request<br/>within 2880s"}
         g2 -->|cold| g3["apply"]
-        g2 -->|warm| g4["compute:<br/>per_turn &#215; horizon<br/>vs prefix &#215; 1.25 &#215; in_price"]
+        g2 -->|warm| g4["compute:<br/>per_turn &#215; horizon<br/>vs prefix &#215; 2.0 &#215; in_price"]
         g4 --> g5{"net positive?"}
         g5 -->|yes| g6["apply"]
         g5 -->|no| g7["hold, log arithmetic"]
@@ -208,11 +208,11 @@ Billing multiples, configurable:
 | | Multiple of base input price | Variable |
 | --- | --- | --- |
 | Cache read | 0.10 | `ROUTER_CACHE_HIT_MULT` |
-| Cache write, 5 minute TTL | 1.25 | `ROUTER_CACHE_WRITE_MULT` |
+| Cache write, 1 hour TTL | 2.0 | `ROUTER_CACHE_WRITE_MULT` |
 
 The TTL is measured from the start of the request that touched the cache, so the
 proxy treats the cache as cold after `ROUTER_CACHE_TTL_SAFE` seconds, default
-240, rather than 300.
+2880, rather than 3600.
 
 `switch_delta(cur, tgt, prefix, pred_out)` returns `(per_turn_saving,
 one_time_cost)`:

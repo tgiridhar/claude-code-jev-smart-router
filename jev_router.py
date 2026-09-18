@@ -128,25 +128,35 @@ def trace(session_key: str, record: dict[str, Any]) -> None:
         pass
 
 # ---- cache economics ------------------------------------------------------
-# $ per MTok. VERIFY against current pricing before trusting the breakeven
-# math; override with ROUTER_PRICES='{"model": {"in": x, "out": y}, ...}'.
+# $ per MTok. Verified 2026-09-18 by solving each rate from observed token
+# counts against billed cost; see bench/calibrate_prices.py. Re-verify when
+# pricing changes. Override with ROUTER_PRICES='{"model": {"in": x, "out": y}}'.
 PRICES: dict[str, dict[str, float]] = json.loads(
     os.environ.get(
         "ROUTER_PRICES",
         json.dumps({
             "claude-haiku-4-5": {"in": 1.0, "out": 5.0},
-            "claude-sonnet-5": {"in": 3.0, "out": 15.0},
+            "claude-sonnet-5": {"in": 2.0, "out": 10.0},
             "claude-opus-5": {"in": 5.0, "out": 25.0},
         }),
     )
 )
-CACHE_WRITE_MULT = float(os.environ.get("ROUTER_CACHE_WRITE_MULT", "1.25"))
+# Claude Code requests a 1-hour cache, not the 5-minute one. Confirmed on the
+# wire: the request carries cache_control {"type":"ephemeral","ttl":"1h"} and
+# the response usage block reports the tokens under ephemeral_1h_input_tokens.
+# A 1-hour write bills at 2.0x input, not the 1.25x of a 5-minute write.
+CACHE_WRITE_MULT = float(os.environ.get("ROUTER_CACHE_WRITE_MULT", "2.0"))
 CACHE_HIT_MULT = float(os.environ.get("ROUTER_CACHE_HIT_MULT", "0.10"))
 
-# The cache lives 5 minutes, measured from the START of the request that last
-# touched it, and generation time counts against it. 240s is the safety margin
-# version of "probably still warm".
-CACHE_TTL_SAFE = float(os.environ.get("ROUTER_CACHE_TTL_SAFE", "240"))
+# The cache lives 1 hour, measured from the START of the request that last
+# touched it, and generation time counts against it. 2880s keeps the same 80%
+# safety margin the old 240s had against a 300s lifetime.
+#
+# This was 240s on the assumption of a 5-minute cache. That made the router
+# declare a cache cold after four minutes when it had fifty-six left, so
+# switch_delta() saw no warm cache to protect and priced downgrades as free.
+# It switched models far more readily than the arithmetic justified.
+CACHE_TTL_SAFE = float(os.environ.get("ROUTER_CACHE_TTL_SAFE", "2880"))
 
 # A one-time cache-rebuild cost buys savings on this many future turns. The
 # recurring-vs-one-time asymmetry is why even a warm cache is worth breaking

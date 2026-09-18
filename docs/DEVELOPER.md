@@ -142,10 +142,10 @@ at the time of writing, not fetched live.
 
 | Variable | Default | Does |
 | --- | --- | --- |
-| `ROUTER_PRICES` | Haiku 1/5, Sonnet 3/15, Opus 5/25 | `$`/MTok in and out per model |
-| `ROUTER_CACHE_WRITE_MULT` | `1.25` | Cache write multiple of base input price |
+| `ROUTER_PRICES` | Haiku 1/5, Sonnet 2/10, Opus 5/25 | `$`/MTok in and out per model. Verified against billed cost, not copied from a page. |
+| `ROUTER_CACHE_WRITE_MULT` | `2.0` | Cache write multiple of base input price. Claude Code requests a **1-hour** cache, which bills at 2.0x. 1.25x is the 5-minute rate. |
 | `ROUTER_CACHE_HIT_MULT` | `0.10` | Cache read multiple of base input price |
-| `ROUTER_CACHE_TTL_SAFE` | `240` | Seconds before the cache is treated as cold. Under the real 300 on purpose: the TTL runs from the **start** of the touching request. |
+| `ROUTER_CACHE_TTL_SAFE` | `2880` | Seconds before the cache is treated as cold. Under the real 3600 on purpose: the TTL runs from the **start** of the touching request. |
 | `ROUTER_SWITCH_HORIZON` | `3` | Turns over which a one-time cache rebuild must pay for itself |
 | `ROUTER_VERBOSITY` | `{}` | Per-model output volume priors, used until enough turns are observed |
 | `ROUTER_TURN_MULT` | `{}` | Per-model agentic turn count priors. A cheaper model that needs more turns is not cheaper. |
