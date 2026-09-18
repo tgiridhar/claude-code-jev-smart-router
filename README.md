@@ -13,10 +13,10 @@ Neither choice is right for a whole session, because a session is not one kind o
 work. Listing a directory and hunting a race condition are different jobs and
 want different models.
 
-This proxy decides per request. It intercepts `POST /v1/messages`, works out what
-the request is actually doing, rewrites the `model` field when the work allows
-it, and forwards to `api.anthropic.com`. Only that field changes. Response
-streams are relayed unmodified.
+This proxy decides per request. It sits between Claude Code and the Anthropic
+API, works out what each request is actually doing, and picks the model for that
+one request. Nothing else about the request changes, and the response streams
+back untouched.
 
 **Over 63 measured runs on six tasks it met every requirement Opus met, for 72%
 less money and in under half the time.** Finding planted bugs, finding planted
