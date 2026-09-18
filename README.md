@@ -23,22 +23,23 @@ request. Medians of three runs.
 | `datasci` generate 5000 rows of sales data, analyse it, write it up | 10/10 | **10/10** | $0.8573 | **$0.2432** | **72%** | 192 s | **107 s** | **1.8x** |
 | **All six** | | | **$2.81** | **$0.79** | **72%** | **610 s** | **284 s** | **2.1x** |
 
-The router met every requirement on every task, for 28% of the money in 47% of
-the time.
+No model grades any of this:
 
-Requirements are counted, not judged. The first three tasks are graded against
-defects planted before the task ran or a hidden test suite; the last three by
-driving the artifact.
+- `bugfind` and `secfind` have known defects hidden in the source file. The count
+  is how many of them the review found.
+- `algo` runs against 20 tests it never sees.
+- `todo`, `pelican` and `datasci` get opened and used. A browser types into the
+  app, clicks its buttons and reloads the page. The SVG is rendered. The analysis
+  scripts are run.
 
-Classification cost $0.0087 to route $21.77 of work, at a median 266 ms per
-decision.
+Classifying cost $0.0087 to route $21.77 of work, and added 266 ms to a request.
 
-Across 18 routed runs, 16 met every requirement. One `bugfind` run found 4 of 6
-defects and one `algo` run passed 19 of 20 tests. Pinned Opus met every
-requirement in all 18 of its runs.
+The router was not perfect every time. Of its 18 runs, 16 met every requirement.
+One `bugfind` run found 4 of the 6 defects, and one `algo` run failed a test.
+Opus met every requirement in all 18 of its runs.
 
-`algo` does not discriminate: every arm scored 20/20, including one pinned to the
-cheapest model. It works as a regression check, not as a comparator.
+`algo` turned out too easy to tell the models apart. Even the cheapest model
+passed all 20 tests, so that row says nothing about which model is better.
 
 ### Task prompts
 
@@ -54,24 +55,18 @@ cheapest model. It works as a regression check, not as a comparator.
 ### Measurement
 
 Costs come from token counts read by the proxy, which sits in the request path on
-both arms, including the pinned-Opus control. Claude Code's own cost figure is not
-used: it attributes usage to the model it requested rather than the one that
-served, so on a routed run it prices Sonnet tokens at Opus rates and reports no
-saving at all.
+both arms including the pinned-Opus control. Claude Code's own `/cost` is not
+used: it bills usage to the model it asked for rather than the one that answered,
+so under the proxy it prices Sonnet tokens at Opus rates and shows no saving.
 
-The answer key for the planted tasks is written before the task runs and is never
-copied into the working directory. A defect counts as found only when the review
-names the relevant symbol and a phrase specific to that defect class in the same
-passage; a review listing every function and no defect scores zero. `algo` is
-graded by running the hidden suite, and a reference solution passes all 20.
+The answer keys sit outside the working directory and are never copied into it. A
+defect only counts as found when the review names the right function and says
+what is actually wrong with it, in the same passage. A review that lists every
+function and finds nothing scores zero.
 
-The built tasks are scored by driving the artifact. The to-do app is loaded in a
-headless browser and used: type a task, press Enter, tick it off,
-filter, rename it, reload the page, delete it.
-
-That is stricter than inspecting the file. One build had an Add button and a
-handler calling `getElementById('taskInput')`, and no text input anywhere in the
-file. It parsed clean and failed on first use.
+Opening the thing catches what reading it does not. One build had an Add button
+and a handler calling `getElementById('taskInput')`, and no text input anywhere
+in the file. It parsed clean and failed the moment anyone typed.
 
 Harness, fixtures and per-run data: [`bench/`](bench/) and
 [`bench/RESULTS.md`](bench/RESULTS.md).
