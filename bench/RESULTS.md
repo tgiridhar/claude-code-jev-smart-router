@@ -69,6 +69,7 @@ that failure in practice: cache hits fell from 80% to 35% and the cheaper model 
 | Arm | Client asks for | Router | Notes |
 | --- | --- | --- | --- |
 | `control-opus` | opus | disabled, pure passthrough | Pinned Opus. The ground truth the router's baseline_top is trying to estimate. |
+| `control-haiku` | haiku | disabled, pure passthrough | Pinned Haiku. The floor: what the cheapest tier can and cannot do unaided. Without it there is no reference for what the money buys. |
 | `router-3tier` | opus | haiku-4-5 / sonnet-5 / opus-5 | The shipped default ladder, on corrected prices. |
 | `router-haiku-opus` | opus | haiku-4-5 / opus-5 | Middle rung deleted. jev_router.py:1700 anticipates exactly this change. |
 
@@ -78,113 +79,102 @@ router process, working directory, trace directory and session id.
 
 ## Per task
 
-### todo
+### bugfind
 
 The ask, verbatim:
 
 ```
-Create todo.html in the current directory: a single self-contained HTML file implementing a todo list app.
+orders.py in the current directory handles orders and refunds for a storefront. It is in production.
 
-Requirements:
-- add a task, mark it complete, delete it
-- filter by all / active / completed
-- persist to localStorage across reloads
-- show a count of remaining items
-- edit an existing task's text
+Review it for defects and write REVIEW.md.
 
-All HTML, CSS and JavaScript go in the one file. No external dependencies, no CDN links, no build step. When you are done, say DONE.
-```
-
-Caps: 30 turns, $2.00 budget, 420s wall clock.
-
-| Arm | Requirements met | Wall | Cost | Perceived Opus | Measured Opus | Perceived saving | Measured saving | Quality |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `control-opus` | 9/9 | 38s | $0.2662 | $0.2662 | $0.2662 | 0.0% | 0.0% | 4/5 |
-| `router-3tier` | 9/9 | 32s | $0.1107 | $0.2761 | $0.2662 | 59.9% | 58.4% | 4/5 |
-| `router-haiku-opus` | **2/9** | 38s | $0.0496 | $0.2460 | $0.2662 | 79.8% | 81.4% | 3/5 |
-
-Model mix on the routed arms:
-
-- `router-3tier`: sonnet-5 x3
-- `router-haiku-opus`: haiku-4-5 x3
-
-Judge ranking, pass 1: `control-opus` > `router-3tier` > `router-haiku-opus`
-Judge ranking, pass 2: `control-opus` > `router-3tier` > `router-haiku-opus`
-
-Pairwise wins where both orderings agreed: `control-opus` 2, `router-3tier` 1, `router-haiku-opus` 0. Disagreements are counted as ties, not results.
-
-### pelican
-
-The ask, verbatim:
-
-```
-Create pelican.svg in the current directory: a single SVG file showing a pelican riding a bicycle.
-
-Hand-author the SVG markup. No external images, no embedded raster data, no fonts. It should be recognisable as both a pelican and a bicycle. When you are done, say DONE.
-```
-
-Caps: 12 turns, $1.50 budget, 300s wall clock.
-
-| Arm | Requirements met | Wall | Cost | Perceived Opus | Measured Opus | Perceived saving | Measured saving | Quality |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `control-opus` | 5/5 | 35s | $0.2201 | $0.2201 | $0.3565 | 0.0% | 38.3% | 4/5 |
-| `router-3tier` | 5/5 | 25s | $0.0899 | $0.2244 | $0.3565 | 59.9% | 74.8% | 3/5 |
-| `router-haiku-opus` | 5/5 | 51s | $0.2714 | $0.2713 | $0.3565 | -0.1% | 23.9% | 4/5 |
-
-Model mix on the routed arms:
-
-- `router-3tier`: sonnet-5 x3
-- `router-haiku-opus`: opus-5 x3
-
-Judge ranking, pass 1: `control-opus` > `router-haiku-opus` > `router-3tier`
-Judge ranking, pass 2: `router-haiku-opus` > `control-opus` > `router-3tier`
-
-Pairwise wins where both orderings agreed: `control-opus` 1, `router-3tier` 0, `router-haiku-opus` 1. Disagreements are counted as ties, not results.
-
-### datasci
-
-The ask, verbatim:
-
-```
-Do a small data analysis in the current directory. pandas is installed.
-
-1. Write generate.py that creates sales.csv with 5000 rows of synthetic retail sales data: a date spread over two years, a region drawn from 5 values, a product category drawn from 8 values, units sold, unit price, and a discount percentage. Build in a seasonal revenue pattern and a handful of anomalous days. Run it.
-2. Write analyze.py that loads sales.csv with pandas and answers:
-   - the monthly revenue trend
-   - the top 3 categories by revenue within each region
-   - the relationship between discount percentage and units sold
-   - which dates are anomalous, and on what basis
-   Run it.
-3. Write FINDINGS.md reporting what the analysis actually showed, with the numbers.
+For each defect give the function and line number, what goes wrong in concrete terms, and the fix. Rank by severity. Report only defects you can point at in the code, not general advice. Do not modify orders.py.
 
 When you are done, say DONE.
 ```
 
-Caps: 45 turns, $3.00 budget, 600s wall clock.
+Caps: 30 turns, $2.50 budget, 480s wall clock.
 
-| Arm | Requirements met | Wall | Cost | Perceived Opus | Measured Opus | Perceived saving | Measured saving | Quality |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `control-opus` | 10/10 | 215s | $1.0397 | $1.0397 | $0.8573 | 0.0% | -21.3% | 5/5 |
-| `router-3tier` | 10/10 | 107s | $0.2432 | $0.6068 | $0.8573 | 59.9% | 71.6% | 4/5 |
-| `router-haiku-opus` | 10/10 | 128s | $0.6428 | $0.6426 | $0.8573 | -0.0% | 25.0% | 5/5 |
+Median of 3 runs per arm. Perfect means every requirement met on every run.
 
-Model mix on the routed arms:
+| Arm | Score | Perfect runs | Wall | Cost | Measured Opus | Saving |
+| --- | --- | --- | --- | --- | --- | --- |
+| `control-opus` | 6/6 | 3/3 | 122s | $0.5486 | $0.5486 | 0.0% |
+| `control-haiku` | **4/6** | 0/3 | 38s | $0.0622 | $0.5486 | 88.7% |
+| `router-3tier` | **6/6** | 2/3 | 50s | $0.1196 | $0.5486 | 78.2% |
+| `router-haiku-opus` | **6/6** | 2/3 | 138s | $0.5903 | $0.5486 | -7.6% |
 
-- `router-3tier`: sonnet-5 x10
-- `router-haiku-opus`: opus-5 x8
+Models the router served, summed over all runs of the cell:
 
-Judge ranking, pass 1: `control-opus` > `router-haiku-opus` > `router-3tier`
-Judge ranking, pass 2: `control-opus` > `router-haiku-opus` > `router-3tier`
+- `router-3tier`: sonnet-5 x9
+- `router-haiku-opus`: opus-5 x21
 
-Pairwise wins where both orderings agreed: `control-opus` 2, `router-3tier` 0, `router-haiku-opus` 1. Disagreements are counted as ties, not results.
+### secfind
+
+The ask, verbatim:
+
+```
+app.py in the current directory is an internal Flask service that serves customer invoices and admin exports. Any authenticated employee can reach it.
+
+Do a security review and write SECURITY.md.
+
+For each finding give the function and line number, the concrete attack it enables, a severity, and a specific fix. Rank by severity. Report only issues you can point at in the code. Do not modify app.py.
+
+When you are done, say DONE.
+```
+
+Caps: 35 turns, $2.50 budget, 540s wall clock.
+
+Median of 3 runs per arm. Perfect means every requirement met on every run.
+
+| Arm | Score | Perfect runs | Wall | Cost | Measured Opus | Saving |
+| --- | --- | --- | --- | --- | --- | --- |
+| `control-opus` | 6/6 | 3/3 | 120s | $0.5045 | $0.5045 | 0.0% |
+| `control-haiku` | **5/6** | 1/3 | 32s | $0.0487 | $0.5045 | 90.3% |
+| `router-3tier` | 6/6 | 3/3 | 38s | $0.1194 | $0.5045 | 76.3% |
+| `router-haiku-opus` | 6/6 | 3/3 | 119s | $0.4762 | $0.5045 | 5.6% |
+
+Models the router served, summed over all runs of the cell:
+
+- `router-3tier`: sonnet-5 x9
+- `router-haiku-opus`: opus-5 x15
+
+### algo
+
+The ask, verbatim:
+
+```
+spec.md in the current directory specifies a function. Implement it in schedules.py, exactly to the spec.
+
+Read the rules carefully, including the daylight saving ones. Your code will be graded by a test suite you cannot see, covering empty input, unsorted input, touching intervals, zero-length intervals, invalid intervals, and behaviour across both daylight saving transitions.
+
+Standard library only. When you are done, say DONE.
+```
+
+Caps: 35 turns, $2.50 budget, 540s wall clock.
+
+Median of 3 runs per arm. Perfect means every requirement met on every run.
+
+| Arm | Score | Perfect runs | Wall | Cost | Measured Opus | Saving |
+| --- | --- | --- | --- | --- | --- | --- |
+| `control-opus` | 20/20 | 3/3 | 48s | $0.2748 | $0.2748 | 0.0% |
+| `control-haiku` | **20/20** | 2/3 | 44s | $0.0593 | $0.2748 | 78.4% |
+| `router-3tier` | **20/20** | 2/3 | 37s | $0.1082 | $0.2748 | 60.6% |
+| `router-haiku-opus` | 20/20 | 3/3 | 91s | $0.4274 | $0.2748 | -55.5% |
+
+Models the router served, summed over all runs of the cell:
+
+- `router-3tier`: sonnet-5 x12
+- `router-haiku-opus`: opus-5 x13
 
 ## Aggregate
 
 | Arm | Runs | Fully working builds | Total cost | Total measured Opus | Measured saving | Mean quality | Mean wall |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `control-opus` | 9 | 9/9 | $4.3873 | $4.4401 | 1.2% | 4.33 | 100s |
-| `router-3tier` | 9 | 9/9 | $1.5655 | $4.4401 | 64.7% | 3.67 | 64s |
-| `router-haiku-opus` | 9 | 8/9 | $4.9179 | $4.4401 | -10.8% | 4.00 | 124s |
+| `control-opus` | 9 | 9/9 | $4.4986 | $3.9837 | -12.9% | - | 97s |
+| `control-haiku` | 9 | 3/9 | $0.6318 | $3.9837 | 84.1% | - | 41s |
+| `router-3tier` | 9 | 7/9 | $1.1527 | $3.9837 | 71.1% | - | 40s |
+| `router-haiku-opus` | 9 | 8/9 | $4.6236 | $3.9837 | -16.1% | - | 120s |
 
 ## How far the dashboard overstates
 
@@ -192,30 +182,30 @@ Perceived saving against measured saving, per routed run:
 
 | Run | Perceived saving | Measured saving | Overstated by |
 | --- | --- | --- | --- |
-| `datasci` / `router-3tier` | 60.0% | 39.0% | 21.0 points |
-| `datasci` / `router-3tier` | 60.0% | 74.4% | -14.4 points |
-| `datasci` / `router-3tier` | 59.9% | 71.6% | -11.7 points |
-| `datasci` / `router-haiku-opus` | -0.0% | -42.3% | 42.3 points |
-| `datasci` / `router-haiku-opus` | -0.0% | -104.2% | 104.2 points |
-| `datasci` / `router-haiku-opus` | -0.0% | 25.0% | -25.0 points |
-| `pelican` / `router-3tier` | 59.9% | 77.9% | -18.0 points |
-| `pelican` / `router-3tier` | 59.9% | 75.5% | -15.6 points |
-| `pelican` / `router-3tier` | 59.9% | 74.8% | -14.9 points |
-| `pelican` / `router-haiku-opus` | -0.1% | -48.0% | 47.9 points |
-| `pelican` / `router-haiku-opus` | -0.0% | 8.0% | -8.0 points |
-| `pelican` / `router-haiku-opus` | -0.1% | 23.9% | -24.0 points |
-| `todo` / `router-3tier` | 59.9% | 58.9% | 1.0 points |
-| `todo` / `router-3tier` | 59.9% | 61.1% | -1.2 points |
-| `todo` / `router-3tier` | 59.9% | 58.4% | 1.5 points |
-| `todo` / `router-haiku-opus` | 79.9% | 80.4% | -0.5 points |
-| `todo` / `router-haiku-opus` | 79.9% | 71.5% | 8.4 points |
-| `todo` / `router-haiku-opus` | 79.8% | 81.4% | -1.6 points |
+| `algo` / `router-3tier` | 59.9% | 58.5% | 1.4 points |
+| `algo` / `router-3tier` | 59.9% | 64.3% | -4.4 points |
+| `algo` / `router-3tier` | 59.9% | 60.6% | -0.7 points |
+| `algo` / `router-haiku-opus` | -0.0% | -55.5% | 55.5 points |
+| `algo` / `router-haiku-opus` | -0.0% | -152.4% | 152.4 points |
+| `algo` / `router-haiku-opus` | -0.1% | 4.1% | -4.2 points |
+| `bugfind` / `router-3tier` | 60.0% | 56.8% | 3.2 points |
+| `bugfind` / `router-3tier` | 60.0% | 78.4% | -18.4 points |
+| `bugfind` / `router-3tier` | 60.0% | 78.2% | -18.2 points |
+| `bugfind` / `router-haiku-opus` | -0.0% | -20.3% | 20.3 points |
+| `bugfind` / `router-haiku-opus` | -0.0% | 14.9% | -14.9 points |
+| `bugfind` / `router-haiku-opus` | -0.1% | -7.6% | 7.5 points |
+| `secfind` / `router-3tier` | 59.9% | 76.8% | -16.9 points |
+| `secfind` / `router-3tier` | 59.9% | 76.3% | -16.4 points |
+| `secfind` / `router-3tier` | 59.9% | 76.0% | -16.1 points |
+| `secfind` / `router-haiku-opus` | -0.1% | -13.2% | 13.1 points |
+| `secfind` / `router-haiku-opus` | -0.1% | 6.0% | -6.1 points |
+| `secfind` / `router-haiku-opus` | -0.1% | 5.6% | -5.7 points |
 
 ## Classifier
 
-- 64 calls across 18 routed runs
-- total classifier spend $0.0053
-- median latency 270 ms
+- 43 calls across 18 routed runs
+- total classifier spend $0.0034
+- median latency 262 ms
 
 ## What these numbers are not
 
@@ -228,4 +218,3 @@ Perceived saving against measured saving, per routed run:
   invisible to it.
 - The judge is Opus scoring output that was sometimes produced by Opus. Blinding and
   order swapping are in place; self-preference is not otherwise controlled for.
-- Judging cost $2.1685, excluded from every figure above.
