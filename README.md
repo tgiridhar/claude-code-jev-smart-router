@@ -23,7 +23,7 @@ request. Medians of three runs.
 | `datasci` generate 5000 rows of sales data, analyse it, write it up | 10/10 | **10/10** | $0.8573 | **$0.2432** | **72%** | 192 s | **107 s** | **1.8x** |
 | **All six** | | | **$2.81** | **$0.79** | **72%** | **610 s** | **284 s** | **2.1x** |
 
-No model grades any of this:
+How each task is scored:
 
 - `bugfind` and `secfind` have known defects hidden in the source file. The count
   is how many of them the review found.
@@ -32,7 +32,7 @@ No model grades any of this:
   app, clicks its buttons and reloads the page. The SVG is rendered. The analysis
   scripts are run.
 
-Classifying cost $0.0087 to route $21.77 of work, and added 266 ms to a request.
+The classifier cost $0.0087 to route $21.77 of work and added 266 ms per request.
 
 The router was not perfect every time. Of its 18 runs, 16 met every requirement.
 One `bugfind` run found 4 of the 6 defects, and one `algo` run failed a test.
