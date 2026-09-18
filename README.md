@@ -1,17 +1,8 @@
 # claude-code-jev-smart-router
 
-Claude Code picks one model when a session starts and uses it for everything.
-Configure Opus and Opus reads your files, runs your greps, writes your commit
-messages, and does the one genuinely hard step that needed it. You pay top-tier
-prices for all of it.
-
-Configuring a cheap model instead is worse. A security review or a subtle bug
-hunt is exactly where a weaker model quietly misses something, and you find out
-later.
-
-Neither choice is right for a whole session, because a session is not one kind of
-work. Listing a directory and hunting a race condition are different jobs and
-want different models.
+Claude Code picks one model per session. Pin Opus and you pay top-tier prices to
+read files and write commit messages. Pin something cheap and it quietly misses
+things in the security review. A session is not one kind of work.
 
 This proxy decides per request. It sits between Claude Code and the Anthropic
 API, works out what each request is actually doing, and picks the model for that
