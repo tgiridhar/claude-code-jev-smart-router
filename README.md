@@ -23,24 +23,21 @@ request. Medians of three runs.
 | `datasci` generate 5000 rows of sales data, analyse it, write it up | 10/10 | **10/10** | $0.8573 | **$0.2432** | **72%** | 192 s | **107 s** |
 | **All six** | | | **$2.81** | **$0.79** | **72%** | | |
 
-Score is requirements met. It is a count, never a model's opinion: the first
-three are graded against defects planted before the task ran or a hidden test
-suite, the last three by driving the artifact.
+Score is requirements met. The first three tasks are graded against defects
+planted before the task ran or a hidden test suite; the last three by driving the
+artifact.
 
-Classification cost **$0.0087 to route $21.77** of work, at a median 266 ms per
-decision. Routing overhead is about one part in two thousand.
+Classification cost $0.0087 to route $21.77 of work, at a median 266 ms per
+decision.
 
-**It is not risk free.** Across 18 routed runs, 16 met every requirement. One
-`bugfind` run found 4 of 6 defects and one `algo` run passed 19 of 20 tests.
-Pinned Opus met every requirement in all 18 of its runs. The medians above hide
-that, which is why it is stated here.
+Across 18 routed runs, 16 met every requirement. One `bugfind` run found 4 of 6
+defects and one `algo` run passed 19 of 20 tests. Pinned Opus met every
+requirement in all 18 of its runs.
 
-`algo` is the weakest of the six. Every arm scored 20/20, including a run pinned
-to the cheapest model, so a tight written spec appears to carry a weak model
-through edge cases it would otherwise miss. Useful as a regression check rather
-than as a comparator.
+`algo` does not discriminate: every arm scored 20/20, including one pinned to the
+cheapest model. It works as a regression check, not as a comparator.
 
-### What was asked
+### Task prompts
 
 | Task | Prompt |
 | --- | --- |
@@ -51,7 +48,7 @@ than as a comparator.
 | `pelican` | Make a single hand-authored SVG of a pelican riding a bicycle. No external images or fonts. |
 | `datasci` | Generate 5000 rows of synthetic retail sales data with seasonality and anomalies, analyse it with pandas, and write up the findings. |
 
-### How it was measured
+### Measurement
 
 Costs come from token counts read by the proxy, which sits in the request path on
 both arms, including the pinned-Opus control. Claude Code's own cost figure is not
@@ -59,19 +56,17 @@ used: it attributes usage to the model it requested rather than the one that
 served, so on a routed run it prices Sonnet tokens at Opus rates and reports no
 saving at all.
 
-**Scoring is pass or fail per requirement, and no model decides it.**
-
-For the planted tasks the answer key is written before the task runs and is never
+The answer key for the planted tasks is written before the task runs and is never
 copied into the working directory. A defect counts as found only when the review
 names the relevant symbol and a phrase specific to that defect class in the same
 passage; a review listing every function and no defect scores zero. `algo` is
 graded by running the hidden suite, and a reference solution passes all 20.
 
-For the built tasks the artifact is driven rather than inspected. The to-do app
-is loaded in a headless browser and used: type a task, press Enter, tick it off,
+The built tasks are scored by driving the artifact. The to-do app is loaded in a
+headless browser and used: type a task, press Enter, tick it off,
 filter, rename it, reload the page, delete it.
 
-This catches what file inspection does not. One build had an Add button and a
+That is stricter than inspecting the file. One build had an Add button and a
 handler calling `getElementById('taskInput')`, and no text input anywhere in the
 file. It parsed clean and failed on first use.
 
@@ -93,22 +88,11 @@ the `model` field rewritten.
 On a Pro, Max or Team subscription there is no per-token bill, so routing
 consumes less of the plan's allowance rather than reducing a charge.
 
-### Prompt cache constraint
-
-Each model has a separate cache, so a mid-conversation switch makes the new model
-re-read the conversation prefix at full input price. In a long session that
-prefix is most of the token volume, so switching on every request can cost more
-than using one model throughout.
-
-The proxy prices each switch against the cache rebuild it causes and applies it
-only when it pays back within a few turns. See
-[Cache management](#cache-management).
-
 ## The classifier
 
 Per-request routing needs classification inside the request path. A
 general-purpose model prompted to classify would add seconds and a token bill to
-every request, which is most of what the routing saves.
+every request.
 
 Jev is a classification model rather than a generative one, served by TypeSafe at
 `api.typesafe.ai/v1/systemone`.
@@ -146,8 +130,7 @@ type. `choice` returns a label from the definition set sent with the question,
 `ROUTER_MIN_CONFIDENCE`, that answer is discarded and the deterministic
 tool-derived phase hint is used instead. Demand adjustments are gated the same
 way. The decision is split into many small questions because the model is
-calibrated per individual judgment; the weighing happens afterwards in
-`pick_tier_v2`.
+calibrated per individual judgment, and combined afterwards in `pick_tier_v2`.
 
 Any error, timeout or non-200 returns no answers, at which point the session
 keeps its current tier or the request forwards as received.
@@ -388,8 +371,8 @@ same task pinned and routed with [`bench/`](bench/).
 | [docs/ONTOLOGY.md](docs/ONTOLOGY.md) | The nine phases, the 15 questions with their definitions, the `pick_tier_v2` conditionals |
 | [docs/DEVELOPER.md](docs/DEVELOPER.md) | Installation, endpoint list, all 28 environment variables, tracing and calibration, troubleshooting |
 
-`ROUTING NOTES` at the end of `jev_router.py` contains the author's commentary on
-the cache interaction and is more current than these documents.
+`ROUTING NOTES` at the end of `jev_router.py` holds the author's notes on the
+cache interaction. It is updated more often than these documents.
 
 ## Measuring cost impact
 
@@ -405,15 +388,15 @@ was actually done, and writes a report:
 export TYPESAFE_API_KEY=...
 python3 bench/preflight.py --live     # setup checks, costs under a cent
 python3 bench/calibrate_prices.py     # solve the real per-model rates
-python3 bench/run_bench.py --pilot    # 2 tasks, both arms
+python3 bench/run_bench.py --pilot    # 2 tasks across every arm
 python3 bench/collect.py <stamp>      # costs, from router token counts
 python3 bench/fr_check.py <stamp>     # did it meet the requirements
 python3 bench/judge.py <stamp>        # blind quality scoring
 python3 bench/report.py <stamp>       # writes bench/RESULTS.md
 ```
 
-Add your own tasks in `bench/tasks.py`. Three tasks on one machine is not a
-general claim, and neither is anything measured on somebody else's workload.
+Add your own tasks in `bench/tasks.py`. The published numbers come from six
+tasks on one machine and do not transfer to a different workload.
 
 ## License
 
