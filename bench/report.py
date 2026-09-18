@@ -231,6 +231,12 @@ def main():
     leaks = re.findall(r"/Users/|/private/tmp/", text)
     if leaks:
         sys.exit(f"refusing to write: {len(leaks)} path leaks survived scrubbing")
+    # Nothing in a published file should look like a credential. scrub() only
+    # rewrites paths, so this is a separate gate rather than a repeat of it.
+    secrets = re.findall(r"sk-ant-[A-Za-z0-9_-]{8,}|apikey_[A-Za-z0-9]{8,}"
+                         r"|ghp_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}", text)
+    if secrets:
+        sys.exit(f"refusing to write: {len(secrets)} credential-shaped string(s) in the report")
     with open(a.out, "w") as f:
         f.write(text)
     print(f"wrote {os.path.relpath(a.out, os.path.dirname(HERE))} ({len(text)} bytes, no path leaks)")

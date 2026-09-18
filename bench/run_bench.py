@@ -65,16 +65,25 @@ load_dotenv()
 # environment hygiene
 # ---------------------------------------------------------------------------
 
+# Credentials, not configuration. These must survive scrubbing or a machine
+# that authenticates by API key rather than by stored OAuth credentials loses
+# auth on every child and the whole matrix fails.
+AUTH_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+
 def child_env(base_url, extra=None):
     """Env for the `claude` child.
 
-    Strips every CLAUDE* and ANTHROPIC* variable inherited from the parent.
-    A Claude Code session exports CLAUDECODE, CLAUDE_CODE_*, CLAUDE_PID and
-    CLAUDE_EFFORT, and a child `claude` would otherwise inherit all of them.
-    CLAUDE_EFFORT in particular would silently change token spend.
+    Strips CLAUDE* and the ANTHROPIC* configuration variables inherited from
+    the parent, keeping the auth ones. A Claude Code session exports
+    CLAUDECODE, CLAUDE_CODE_*, CLAUDE_PID and CLAUDE_EFFORT, and a child
+    `claude` would otherwise inherit all of them. CLAUDE_EFFORT in particular
+    would silently change token spend, and ANTHROPIC_MODEL would override the
+    arm's model.
     """
     e = {k: v for k, v in os.environ.items()
-         if not k.startswith("CLAUDE") and not k.startswith("ANTHROPIC")}
+         if not (k.startswith("CLAUDE")
+                 or (k.startswith("ANTHROPIC") and k not in AUTH_VARS))}
     if base_url:
         e["ANTHROPIC_BASE_URL"] = base_url
     if extra:

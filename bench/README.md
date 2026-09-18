@@ -85,8 +85,14 @@ an `env` block; `preflight.py` checks that it stays that way.
 
 **Inherited environment.** A `claude` launched from inside a Claude Code
 session inherits `CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_PID` and
-`CLAUDE_EFFORT`. The last one would change token spend. Every `CLAUDE*` and
-`ANTHROPIC*` variable is stripped from the child environment.
+`CLAUDE_EFFORT`. The last one would change token spend, and `ANTHROPIC_MODEL`
+would override the arm's model. Every `CLAUDE*` and every `ANTHROPIC*`
+configuration variable is stripped from the child environment.
+
+`ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` are deliberately kept. They are
+credentials, not configuration. On a machine that authenticates by API key
+rather than by stored OAuth credentials, stripping them would fail every run
+with an auth error.
 
 **Two models in one run.** Never `--model opusplan`, never
 `--permission-mode plan`, never `--fallback-model`. Each resolves to more than

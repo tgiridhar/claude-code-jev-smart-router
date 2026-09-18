@@ -117,14 +117,24 @@ def t_router_starts():
 
 
 def t_env_scrubbed():
+    """Config must be stripped from the child. Credentials must survive it."""
     e = rb.child_env("http://127.0.0.1:1234")
+    allowed = ("ANTHROPIC_BASE_URL",) + rb.AUTH_VARS
     leaked = sorted(k for k in e if k.startswith("CLAUDE") or
-                    (k.startswith("ANTHROPIC") and k != "ANTHROPIC_BASE_URL"))
+                    (k.startswith("ANTHROPIC") and k not in allowed))
     if leaked:
-        return False, f"leaked into child env: {leaked}"
+        return False, f"config leaked into child env: {leaked}"
     if e.get("ANTHROPIC_BASE_URL") != "http://127.0.0.1:1234":
         return False, "ANTHROPIC_BASE_URL not set on child env"
-    return True, f"ANTHROPIC_BASE_URL set, {len([k for k in os.environ if k.startswith(('CLAUDE','ANTHROPIC'))])} parent vars stripped"
+    # An API-key machine has no stored OAuth credentials to fall back on, so
+    # dropping the key here would fail every run with an auth error.
+    for k in rb.AUTH_VARS:
+        if k in os.environ and k not in e:
+            return False, f"{k} was stripped; a machine authenticating by API key would lose auth"
+    kept = [k for k in rb.AUTH_VARS if k in e]
+    n = len([k for k in os.environ if k.startswith(("CLAUDE", "ANTHROPIC"))])
+    return True, (f"{n} parent vars seen, config stripped, base url set, "
+                  f"auth preserved: {kept or 'none set (stored credentials in use)'}")
 
 
 def t_no_settings_env_block():
