@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="440" viewBox="0 0 800 440" role="img" aria-label="Grid of cognitive demand against the cost of an undetected error, showing the model tier each combination selects">
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="440" viewBox="0 0 800 440" role="img" aria-label="Grid of task difficulty against error cost, showing the model tier selected for each combination">
   <rect x="0" y="0" width="800" height="440" fill="#ffffff"/>
-  <text x="20" y="30" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#111827">tier = cognitive demand &#215; cost of an undetected error</text>
-  <text x="20" y="52" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#6b7280">Cells show the tier for phase = implement. A cheap model is safe when a check catches its mistakes, dangerous when nothing does.</text>
+  <text x="20" y="30" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#111827">Tier selected by task difficulty and error cost</text>
+  <text x="20" y="52" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#6b7280">Values for phase = implement, with the default three-tier ladder. Set by the conditionals in pick_tier_v2.</text>
 
   <text x="345" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#374151" text-anchor="middle">Rote</text>
   <text x="515" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#374151" text-anchor="middle">Routine</text>
@@ -26,7 +26,7 @@
   <!-- row 2: no oracle -->
   <rect x="20" y="206" width="240" height="66" fill="#f9fafb" stroke="#e5e7eb"/>
   <text x="34" y="233" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#111827">Nothing checks it</text>
-  <text x="34" y="250" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#6b7280">ordinary code, small blast radius</text>
+  <text x="34" y="250" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#6b7280">ordinary code, limited impact</text>
   <rect x="260" y="206" width="170" height="66" fill="#0C8A6C" fill-opacity="0.13" stroke="#e5e7eb"/>
   <text x="345" y="245" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0C8A6C" text-anchor="middle">Haiku</text>
   <rect x="430" y="206" width="170" height="66" fill="#A87B0B" fill-opacity="0.13" stroke="#e5e7eb"/>
@@ -60,5 +60,5 @@
   <rect x="600" y="338" width="170" height="66" fill="#CB4136" fill-opacity="0.13" stroke="#e5e7eb"/>
   <text x="685" y="377" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#CB4136" text-anchor="middle">Opus</text>
 
-  <text x="20" y="424" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#6b7280">A FLOOR is a veto: no cache-driven downgrade may cross it. Everything above is a prior from pick_tier_v2, not a tuned value.</text>
+  <text x="20" y="424" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#6b7280">Rows marked FLOOR cannot be lowered by the cache cost check. All thresholds are defaults, not fitted values.</text>
 </svg>

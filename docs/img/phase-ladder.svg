@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="810" height="360" viewBox="0 0 810 360" role="img" aria-label="The nine SDLC phases plotted against the base model tier each one starts from">
+<svg xmlns="http://www.w3.org/2000/svg" width="810" height="360" viewBox="0 0 810 360" role="img" aria-label="The nine lifecycle phases plotted against the default model tier assigned to each">
   <rect x="0" y="0" width="810" height="360" fill="#ffffff"/>
-  <text x="20" y="30" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#111827">Where each SDLC phase starts on the ladder</text>
-  <text x="20" y="52" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#6b7280">The base tier before demand, blast radius and trajectory move it. Searching is cheap cognition. Deciding the approach is not.</text>
+  <text x="20" y="30" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#111827">Default tier per phase</text>
+  <text x="20" y="52" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#6b7280">The tier assigned by phase alone, before demand, error cost and trajectory adjustments are applied.</text>
 
   <!-- row guides -->
   <rect x="100" y="98" width="700" height="44" fill="#CB4136" fill-opacity="0.05"/>
@@ -45,7 +45,7 @@
   <!-- sdlc direction -->
   <line x1="100" y1="322" x2="792" y2="322" stroke="#d1d5db" stroke-width="1"/>
   <polygon points="792,322 784,318 784,326" fill="#d1d5db"/>
-  <text x="100" y="340" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#9ca3af">a work unit moves left to right, and the router re-decides at every step</text>
+  <text x="100" y="340" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#9ca3af">phases of one work unit, in typical order; the tier is re-evaluated on each request</text>
 
-  <text x="20" y="356" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#9ca3af">Source: the base map in jev_ontology.pick_tier_v2. housekeeping holds the session tier and spends no Jev call at all.</text>
+  <text x="20" y="356" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#9ca3af">Source: the phase table in jev_ontology.pick_tier_v2. housekeeping returns tier=None, holding the current tier without a classifier request.</text>
 </svg>

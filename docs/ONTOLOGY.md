@@ -1,46 +1,53 @@
-# The ontology, visualized
+# Question set and tier policy
 
-`jev_ontology.py` answers exactly one question: **what tier does this work want,
-and why.** It knows nothing about money, nothing about the prompt cache and
-nothing about HTTP. Pure functions, stdlib only, no state. The router decides
-whether the answer is affordable.
+`jev_ontology.py` maps a request to a tier index. It contains no network I/O, no
+state, and no pricing. The proxy decides whether the mapped tier is used.
 
-## The rule that shapes everything
+Public API, as imported by `jev_router.py`:
 
-> Code extracts facts, Jev makes judgments. Anything computable from the request
-> body is computed here and handed to Jev as structured state. **Jev is never
-> asked something a regex already knows.**
+| Function | Returns |
+| --- | --- |
+| `extract_ledger(body, *, is_subagent=False)` | facts dict, six sections |
+| `build_state_v2(ledger, session=None, *, mid_run=False)` | the string sent to the classifier |
+| `pick_tier_v2(answers, ledger, n_tiers, *, current=None, author_tier=None)` | tier, reasons, safety, sticky, effort |
+| `recheck_reason(prev, ledger, run_len, every=6)` | trigger string or `None` |
+| `ledger_summary(ledger)` | compact dict for change detection |
+| `outcome_labels(ledger, answers)` | labels written to traces for calibration |
+| `split_human_text(message)` | user text separated from harness wrappers |
 
-This is not a style preference. Asking a model "how many files were edited" burns
-latency and tokens to get a worse answer than `len()`. Asking a regex "is the
-approach in question" gets you keyword bingo. The split follows the strengths.
+Constants also exported: `QUESTIONS_V2`, `STEP_QUESTIONS_V2`, `TOOL_KINDS`.
+
+## Division between extraction and classification
+
+Values computable from the request body are computed in code. The classifier is
+sent those values and asked only for judgments that regex cannot produce.
 
 ```mermaid
 flowchart LR
-    body["request body<br/><small>full history, every turn</small>"]
+    body["request body<br/><small>full history, each request</small>"]
 
-    subgraph facts["FACTS: pure code, &lt;1ms, deterministic"]
+    subgraph facts["Computed in code, &lt;1ms, deterministic"]
         direction TB
         f1["<b>TOOL_KINDS</b><br/><small>29 tool names &rarr; 11 kinds</small>"]
-        f2["<b>BASH_CLASSES</b><br/><small>8 classes, most<br/>consequential wins</small>"]
-        f3["<b>FAIL_TEXT / PASS_TEXT</b><br/><small>did the check pass</small>"]
-        f4["<b>_failure_signature</b><br/><small>sha1 of a normalized<br/>error line</small>"]
-        f5["<b>RISK_SURFACE</b><br/><small>auth, money, migrations,<br/>infra, concurrency</small>"]
+        f2["<b>BASH_CLASSES</b><br/><small>8 classes, checked in order</small>"]
+        f3["<b>FAIL_TEXT / PASS_TEXT</b><br/><small>check outcome</small>"]
+        f4["<b>_failure_signature</b><br/><small>sha1 of normalized<br/>error line</small>"]
+        f5["<b>RISK_SURFACE</b><br/><small>regex over paths<br/>and identifiers</small>"]
         f6["<b>system-reminder parse</b><br/><small>plan mode, todos,<br/>CLAUDE.md, skills</small>"]
     end
 
-    subgraph ledger["THE LEDGER: six sections"]
+    subgraph ledger["extract_ledger output: six sections"]
         direction TB
-        l1["<b>harness</b><br/><small>role, plan mode, thinking budget,<br/>LSP, MCP servers, skills</small>"]
-        l2["<b>unit</b><br/><small>opening request, latest ask,<br/>human turns, steps, todos</small>"]
-        l3["<b>activity</b><br/><small>tool kinds, bash classes, files<br/>edited, lines, searches, subagents</small>"]
-        l4["<b>verification</b><br/><small>check runs, last check, failure<br/>streak, same failure repeats,<br/>edits since last check</small>"]
-        l5["<b>risk</b><br/><small>risk surface hits, outward or<br/>destructive commands, MCP writes</small>"]
-        l6["<b>recent_steps</b><br/><small>compact per-step records</small>"]
+        l1["<b>harness</b><br/><small>agent_role, plan_mode, thinking_budget,<br/>lsp_available, mcp_servers, skills_loaded</small>"]
+        l2["<b>unit</b><br/><small>opening_request, latest_human_ask,<br/>human_turns, steps_in_unit, todos</small>"]
+        l3["<b>activity</b><br/><small>tool_kinds, bash_classes, files_edited,<br/>lines_changed_est, searches, subagents</small>"]
+        l4["<b>verification</b><br/><small>check_runs, last_check,<br/>consecutive_failures, same_failure_repeats,<br/>edits_since_last_check</small>"]
+        l5["<b>risk</b><br/><small>risk_surface_hits,<br/>outward_or_destructive_commands,<br/>mcp_write_calls</small>"]
+        l6["<b>recent_steps</b><br/><small>per-step records</small>"]
     end
 
-    jev["<b>JUDGMENTS: Jev</b><br/><small>15 atomic questions.<br/>Never asked what a<br/>regex already knows.</small>"]
-    pol["<b>pick_tier_v2</b><br/><small>weighing, in code<br/>you can read</small>"]
+    jev["<b>Jev API</b><br/><small>15 questions</small>"]
+    pol["<b>pick_tier_v2</b><br/><small>conditionals</small>"]
 
     body --> facts --> ledger
     ledger -->|"state document"| jev
@@ -54,143 +61,154 @@ flowchart LR
     style pol fill:#fffbeb,stroke:#a87b0b,stroke-width:2px
 ```
 
-The ledger is **recomputed from the request, never held in memory**. Claude Code
-resends the full history on every call, so `extract_ledger(body)` is a pure
-function: it survives router restarts and it cannot drift from reality. After a
-`/compact` the history shrinks and so does the ledger. That is accepted.
+`extract_ledger(body)` is recomputed each request rather than accumulated in
+memory, since Claude Code resends the full history. It therefore survives router
+restarts. After a `/compact` the history shrinks and the ledger shrinks with it.
 
-## The nine SDLC phases
+## Phases
 
-The lifecycle is the spine of the thing. These are the definitions Jev is given,
-verbatim:
+`phase` is one of nine values. These are the definitions sent to the classifier:
 
-| Phase | Definition |
+| Phase | Definition | Default tier |
+| --- | --- | --- |
+| `clarify` | Requirements are being established: the agent should ask, restate, or pin down what is wanted before doing anything | mid |
+| `explore` | Locating and reading: grep, find, file reads, symbol lookups, MCP or doc queries, to learn where things are and how they work | 0 |
+| `plan` | Deciding the approach: architecture, trade-offs, a multi-step plan, decomposing work, choosing what to delegate to subagents | top |
+| `implement` | Writing or changing code according to an approach that already exists | mid |
+| `debug` | A check has failed or behaviour is wrong, and the cause is not yet known: forming and testing hypotheses | mid |
+| `verify` | Running tests, builds, linters or type checks and reading the result, with no diagnosis needed yet | 0 |
+| `review` | Judging existing code or a diff: correctness, security, design, conformance to conventions; writing review findings | mid |
+| `integrate` | Wrapping up: commits, PR descriptions, changelogs, docs, ticket updates, pushing or deploying | 0 |
+| `housekeeping` | Not a step of work: a skill or tool schema loading, an attachment arriving, a session resuming, a bare acknowledgement | hold |
+
+With the default three-tier ladder, `0` is Haiku, `mid` is Sonnet, `top` is Opus:
+
+![The nine phases and their default tier](img/phase-ladder.svg)
+
+`housekeeping` returns `tier = None`, which holds the session's current tier and
+sends no classifier request.
+
+### Deterministic phase fallback
+
+`_phase_hint(ledger)` computes a phase from the tool stream. It is used when the
+classifier's confidence in `phase` is below `ROUTER_MIN_CONFIDENCE`. Priority
+cascade, then a vote:
+
+| Condition | Result |
 | --- | --- |
-| `clarify` | Requirements are being established: the agent should ask, restate, or pin down what is wanted before doing anything |
-| `explore` | Locating and reading: grep, find, file reads, symbol lookups, MCP or doc queries, to learn where things are and how they work |
-| `plan` | Deciding the approach: architecture, trade-offs, a multi-step plan, decomposing work, choosing what to delegate to subagents |
-| `implement` | Writing or changing code according to an approach that already exists |
-| `debug` | A check has failed or behaviour is wrong, and the cause is not yet known: forming and testing hypotheses |
-| `verify` | Running tests, builds, linters or type checks and reading the result, with no diagnosis needed yet |
-| `review` | Judging existing code or a diff: correctness, security, design, conformance to conventions; writing review findings |
-| `integrate` | Wrapping up: commits, PR descriptions, changelogs, docs, ticket updates, pushing or deploying |
-| `housekeeping` | Not a step of work: a skill or tool schema loading, an attachment arriving, a session resuming, a bare acknowledgement |
+| plan mode active | `plan` |
+| no steps recorded | `unknown` |
+| last step was a skill load | `housekeeping` |
+| failure streak, or last step failed | `debug` |
+| last bash was `outward` or `vcs_write` | `integrate` |
+| a diff was read and nothing was edited | `review` |
+| otherwise | majority vote over the last 5 steps |
 
-Each phase starts from a base tier:
+The vote maps reads, searches, LSP and web to `explore`; edits to `implement`;
+verify-class bash to `verify`; MCP writes to `integrate` and MCP reads to
+`explore`.
 
-![The nine SDLC phases against the base tier each starts from](img/phase-ladder.svg)
-
-`explore`, `verify` and `integrate` start at the cheapest rung because locating
-code, reading a test result and writing a commit message are cheap cognition.
-`plan` starts at the top because the approach is the expensive decision and a
-wrong approach costs every step that follows it. `housekeeping` spends no Jev call
-at all: the session holds whatever tier it had.
-
-There is also a **deterministic phase hint** computed from the tool stream
-(`_phase_hint`), used as a fallback whenever Jev's confidence in `phase` falls
-below 0.45. It is a priority cascade then a vote: plan mode wins outright, a
-skill load means housekeeping, a failure streak means debug, an outward or
-version-control-write bash command means integrate, looking at a diff while
-editing nothing means review, and otherwise the last five steps vote.
-
-## The 15 questions on nine axes
+## The 15 questions
 
 ```mermaid
 flowchart LR
-    root(["15 atomic<br/>questions"])
+    root(["QUESTIONS_V2"])
 
-    a1["WHAT kind of step"]
-    a2["HOW hard is it"]
-    a3["HOW governed is it"]
-    a4["WHAT IF IT IS WRONG"]
-    a5["HOW is it going"]
-    a6["review only"]
-    a7["economics"]
+    a1["step type"]
+    a2["difficulty"]
+    a3["specification"]
+    a4["error cost"]
+    a5["progress"]
+    a6["review"]
+    a7["output volume"]
 
     root --> a1 --> q1["<b>phase</b><br/><small>choice, 9 values</small>"]
 
     root --> a2
-    a2 --> q2["<b>next_step_demand</b><br/><small>score: rote / routine / hard</small>"]
-    a2 --> q3["<b>cross_cutting</b><br/><small>keep several files<br/>mutually consistent</small>"]
-    a2 --> q4["<b>repo_specific</b><br/><small>needs this repo's<br/>conventions and history</small>"]
-    a2 --> q5["<b>canonical</b><br/><small>a well-known artifact with<br/>countless implementations</small>"]
+    a2 --> q2["<b>next_step_demand</b><br/><small>score 0-2</small>"]
+    a2 --> q3["<b>cross_cutting</b><br/><small>noul</small>"]
+    a2 --> q4["<b>repo_specific</b><br/><small>noul</small>"]
+    a2 --> q5["<b>canonical</b><br/><small>noul</small>"]
 
-    root --> a3 --> q6["<b>spec_completeness</b><br/><small>score: governed /<br/>goal clear / outcome only</small>"]
+    root --> a3 --> q6["<b>spec_completeness</b><br/><small>score 0-2</small>"]
 
     root --> a4
-    a4 --> q7["<b>oracle_in_loop</b><br/><small>would a check already<br/>running catch it</small>"]
-    a4 --> q8["<b>risk_surface</b><br/><small>auth, money, migrations,<br/>concurrency, infra</small>"]
-    a4 --> q9["<b>irreversible</b><br/><small>acts outside the working<br/>tree, cannot be undone</small>"]
+    a4 --> q7["<b>oracle_in_loop</b><br/><small>noul</small>"]
+    a4 --> q8["<b>risk_surface</b><br/><small>noul</small>"]
+    a4 --> q9["<b>irreversible</b><br/><small>noul</small>"]
 
     root --> a5
     a5 --> q10["<b>trajectory</b><br/><small>choice, 6 values</small>"]
-    a5 --> q11["<b>unverified_confidence</b><br/><small>claims success nothing checked</small>"]
-    a5 --> q12["<b>user_correcting</b><br/><small>the user just rejected it</small>"]
+    a5 --> q11["<b>unverified_confidence</b><br/><small>noul</small>"]
+    a5 --> q12["<b>user_correcting</b><br/><small>noul</small>"]
 
-    root --> a6 --> q13["<b>review_depth</b><br/><small>conformance / correctness /<br/>security_or_design</small>"]
+    root --> a6 --> q13["<b>review_depth</b><br/><small>choice, 4 values</small>"]
 
     root --> a7
-    a7 --> q14["<b>gen_volume</b><br/><small>score: how much output</small>"]
-    a7 --> q15["<b>is_followup</b><br/><small>small continuation,<br/>not a new task</small>"]
+    a7 --> q14["<b>gen_volume</b><br/><small>score 0-2</small>"]
+    a7 --> q15["<b>is_followup</b><br/><small>noul</small>"]
 
     style a4 fill:#fef2f2,stroke:#cb4136,stroke-width:2px
     style q7 fill:#fef2f2,stroke:#cb4136
     style q8 fill:#fef2f2,stroke:#cb4136
     style q9 fill:#fef2f2,stroke:#cb4136
-    style a7 fill:#fffbeb,stroke:#a87b0b
-    style q14 fill:#fffbeb,stroke:#a87b0b
-    style q15 fill:#fffbeb,stroke:#a87b0b
     style root fill:#e0f2fe,stroke:#0369a1,stroke-width:2px
 ```
 
-The red axis is the one most routers leave out. "What if it is wrong" is not a
-tiebreaker, it is half the formula.
+Answer types: `choice` selects a label from a definition set, `score` is an
+ordinal 0/1/2, `noul` is a single value in `[0, 1]`.
 
-Three answer types. `choice` picks a label from a definition set. `score` is an
-ordinal 0/1/2. `noul` is a single 0 to 1 likelihood.
+| Question | Type | Definition sent to the classifier | Sent on |
+| --- | --- | --- | --- |
+| `phase` | choice | The software-lifecycle phase of the agent's NEXT step | all |
+| `next_step_demand` | score | How much judgment the agent's NEXT step needs | all |
+| `spec_completeness` | score | How much of the approach is already decided | user turns |
+| `cross_cutting` | noul | Requires keeping several modules or files mutually consistent at once (not merely reading many files) | all |
+| `repo_specific` | noul | Depends on conventions, architecture or history particular to this codebase rather than general knowledge | all |
+| `canonical` | noul | The thing being built is a well-known, canonical artifact with countless established implementations | all |
+| `oracle_in_loop` | noul | If done wrong, a check the agent is already running in this session (tests, build, type checker, linter, hook) would reveal it promptly | all |
+| `risk_surface` | noul | Touches code where a subtle mistake is costly: authentication, money, data migrations, concurrency, infrastructure, deletion of data, or a public API contract | all |
+| `irreversible` | noul | Likely to act outside the local working tree in a way that cannot simply be undone: pushing, deploying, publishing, writing to an external system through an MCP tool, deleting data | all |
+| `trajectory` | choice | How the current run of work is going | all |
+| `unverified_confidence` | noul | The agent's latest remark claims success or asserts facts about the code that nothing in the recorded steps actually checked | all |
+| `user_correcting` | noul | The user's newest message rejects, corrects or expresses dissatisfaction with what the agent just did | user turns |
+| `review_depth` | choice | If the next step is reviewing code, the depth of review called for | all |
+| `gen_volume` | score | How much text or code the next step will generate | all |
+| `is_followup` | noul | The user's newest message is a small continuation or confirmation of the work immediately preceding it rather than a new task | user turns |
 
-| Question | Type | Asked when |
-| --- | --- | --- |
-| `phase` | choice | every decision |
-| `next_step_demand` | score | every decision |
-| `spec_completeness` | score | **human turns only** |
-| `cross_cutting` | noul | every decision |
-| `repo_specific` | noul | every decision |
-| `canonical` | noul | every decision |
-| `oracle_in_loop` | noul | every decision |
-| `risk_surface` | noul | every decision |
-| `irreversible` | noul | every decision |
-| `trajectory` | choice | every decision |
-| `unverified_confidence` | noul | every decision |
-| `user_correcting` | noul | **human turns only** |
-| `review_depth` | choice | every decision |
-| `gen_volume` | score | every decision |
-| `is_followup` | noul | **human turns only** |
+`STEP_QUESTIONS_V2` is `QUESTIONS_V2` minus `spec_completeness`,
+`user_correcting` and `is_followup`, leaving 12. Mid-run rechecks use it, since
+there is no new user message.
 
-Mid-run rechecks drop the three human-only questions, because there is no new
-human message to judge. That leaves 12.
+### Ordinal scales
 
-### The ordinal vocabularies, verbatim
+`next_step_demand`:
 
-`next_step_demand`, "how much judgment the agent's NEXT step needs":
+| Value | Definition |
+| --- | --- |
+| 0 | Rote: the action is fully determined by what is already on the page |
+| 1 | Routine: skilled but conventional work inside an understood approach |
+| 2 | Hard: subtle reasoning, competing hypotheses, or the approach itself is in question |
 
-0. Rote: the action is fully determined by what is already on the page
-1. Routine: skilled but conventional work inside an understood approach
-2. Hard: subtle reasoning, competing hypotheses, or the approach itself is in question
+`spec_completeness`:
 
-`spec_completeness`, "how much of the approach is already decided":
+| Value | Definition |
+| --- | --- |
+| 0 | Governed: an explicit plan, todo list, spec or exact instruction covers the next step |
+| 1 | Goal clear, method open |
+| 2 | Outcome only: the path is left entirely to the agent |
 
-0. Governed: an explicit plan, todo list, spec or exact instruction covers the next step
-1. Goal clear, method open
-2. Outcome only: the path is left entirely to the agent
+`gen_volume`:
 
-`gen_volume`, "how much text or code the next step will generate":
+| Value | Definition |
+| --- | --- |
+| 0 | A brief reply, a tool call, or a small edit |
+| 1 | A screenful of code or prose, or edits across a few files |
+| 2 | Extensive generation: large new files, many files, or a long document |
 
-0. A brief reply, a tool call, or a small edit
-1. A screenful of code or prose, or edits across a few files
-2. Extensive generation: large new files, many files, or a long document
+### Choice values
 
-`trajectory`, "how the current run of work is going":
+`trajectory`:
 
 | Value | Definition |
 | --- | --- |
@@ -201,168 +219,217 @@ human message to judge. That leaves 12.
 | `blocked_on_human` | The agent cannot proceed without a decision or information from the user |
 | `just_started` | Too early to tell |
 
-`review_depth` runs `not_review`, `conformance` (style, naming, checklist),
-`correctness` (edge cases, error handling, tests), `security_or_design`
-(vulnerabilities, concurrency hazards, architectural fit, API design).
+`review_depth`:
 
-## What the code measures instead of asking
-
-Tool names map to kinds. This is the entire vocabulary, and it is isolated at the
-top of the file precisely because it rots between Claude Code releases:
-
-| Kind | Tools |
+| Value | Definition |
 | --- | --- |
-| `read` | Read, NotebookRead |
-| `search` | Grep, Glob, LS |
-| `edit` | Edit, MultiEdit, Write, NotebookEdit |
-| `bash` | Bash, BashOutput, PowerShell |
-| `subagent` | Agent, Task |
-| `todo` | TodoWrite, TaskCreate, TaskUpdate, TaskList |
-| `skill` | Skill, SlashCommand |
-| `plan` | EnterPlanMode, ExitPlanMode |
-| `ask` | AskUserQuestion |
-| `web` | WebFetch, WebSearch |
-| `meta` | ToolSearch, TaskOutput, TaskStop, KillShell |
-| `mcp` | anything named `mcp__server__tool`, at runtime |
-| `lsp` | matched by regex, at runtime |
+| `not_review` | The next step is not a review |
+| `conformance` | Style, naming, formatting, checklist or convention conformance |
+| `correctness` | Whether the logic is right: edge cases, error handling, tests |
+| `security_or_design` | Vulnerabilities, concurrency hazards, architectural fit, API design |
 
-Bash is where consequence lives, so bash gets its own ladder, checked in this
-order with **the most consequential match winning**:
+## Extraction tables
 
-`destructive` &rarr; `outward` &rarr; `verify` &rarr; `vcs_write` &rarr; `package`
-&rarr; `vcs_read` &rarr; `search` &rarr; `run`, falling through to `other`.
+These are at the top of `jev_ontology.py` so they can be corrected when Claude
+Code changes tool names.
 
-A command is split on `&&`, `||`, `;` and newlines, and each segment is
-classified by the **head of its pipeline**, so `pytest | tail` is a verify rather
-than a search.
-
-Two measurements deserve calling out because they are what make "it is stuck" a
-fact rather than a vibe:
-
-- **`_failure_signature`** fingerprints a failure by taking the failing line,
-  normalizing every number and hex address to `N` and every path to `/P`, then
-  hashing it. The same error twice is now detectable. Note that a **passing**
-  check resets the count: only failures since the last green run count as "the
-  same failure again", because once the check goes green the thrash is over.
-- **`oracle_in_loop` is capped when no check has ever run.** Jev can claim a
-  check would catch the mistake, but if `check_runs == 0` the answer is clamped
-  to 0.3. A check nobody has run is not an oracle.
-
-## How the tier gets picked
-
-`pick_tier_v2` in order. `top` is the highest tier index, `mid` the middle.
-
-1. **Phase, with a confidence fallback.** If Jev's confidence in `phase` is below
-   0.45, use the tool-derived hint instead.
-2. **Hold.** `housekeeping`, or `trajectory == blocked_on_human`, returns
-   `tier = None`. The session keeps what it had.
-3. **Base tier by phase.** `explore`, `verify`, `integrate` at 0. `plan` at `top`.
-   Everything else at `mid`.
-4. **Demand adjustment, clamped to &plusmn;1 in total.** `demand > 1.4` adds one,
-   `demand < 0.6` subtracts one, both gated on confidence. `cross_cutting > 0.7`
-   adds one. Implementing with `spec_completeness > 1.4` adds one, because that is
-   implementing without a plan. Exploring with two or more oversized search
-   results and no LSP adds one, because grep noise is where cheap models drown.
-5. **Repo-specific floor.** `repo_specific > 0.7` during implement, debug or
-   review floors at `mid`. General knowledge will not save you in someone else's
-   architecture.
-6. **Error-cost floors.** These set `safety = True`, which the cache layer may
-   not override:
-   - `irreversible > 0.6` floors at `top` if also a risk surface, else `mid`.
-   - `risk_surface > 0.6` with `oracle_in_loop < 0.4` floors at `top` when demand
-     is at least routine, else `mid`.
-   - The one **discount**: `oracle_in_loop > 0.7` with low risk and low demand
-     drops a rung. Errors get caught, so buy the cheap model.
-7. **Trajectory ratchet**, relative to whichever is higher of the wanted and
-   current tier. The same failure three times, or `thrashing`, adds one and sets
-   safety. `drifting` adds one. Claimed success with three or more unchecked
-   edits floors at `mid`. `user_correcting > 0.65` adds one, sets safety, **and
-   is sticky for the whole work unit.** When the user says you got it wrong, that
-   is the highest-value signal available and it does not expire on the next turn.
-8. **Review rules.** `security_or_design` goes to `top`. `conformance` at low risk
-   caps at `mid`. And **the reviewer is never cheaper than the author**: the
-   router tracks which model wrote the code being reviewed and floors the review
-   at that tier.
-9. **Human intent and caps.** Plan mode goes to `top`, because the user asking to
-   plan is an explicit request for the expensive kind of thinking. A thinking
-   budget of 16k or more floors at `mid`. `canonical > 0.7` caps at `top - 1`
-   unless safety fired: the ten thousandth CRUD endpoint does not need the best
-   model. An `explore` subagent caps at `mid`: searching is cheap cognition and
-   only the final result returns to the parent.
-10. **Effort**, and it only ever goes down. When things are calm (no safety, not
-    plan mode, not thrashing or drifting), low demand in explore, verify,
-    integrate or implement recommends `low`, and moderate demand recommends
-    `medium`. Otherwise the client's setting is left alone.
-
-### The output contract
+### `TOOL_KINDS`
 
 ```python
-{"tier":    int | None,   # index into the router's ladder. None = hold.
- "reasons": list[str],    # "debug phase", "thrashing (same failure x3)", ...
- "safety":  bool,         # a FLOOR. The cache policy must not hold it down.
- "sticky":  bool,         # the floor holds for the whole work unit
+"Read": "read",            "NotebookRead": "read",
+"Grep": "search",          "Glob": "search",          "LS": "search",
+"Edit": "edit",            "MultiEdit": "edit",       "Write": "edit",
+"NotebookEdit": "edit",
+"Bash": "bash",            "BashOutput": "bash",      "PowerShell": "bash",
+"Agent": "subagent",       "Task": "subagent",
+"TodoWrite": "todo",       "TaskCreate": "todo",
+"TaskUpdate": "todo",      "TaskList": "todo",
+"Skill": "skill",          "SlashCommand": "skill",
+"EnterPlanMode": "plan",   "ExitPlanMode": "plan",
+"AskUserQuestion": "ask",
+"WebFetch": "web",         "WebSearch": "web",
+"ToolSearch": "meta",      "TaskOutput": "meta",
+"TaskStop": "meta",        "KillShell": "meta",
+```
+
+Two kinds are assigned at runtime rather than from the table: `mcp` for names
+matching `mcp__server__tool`, and `lsp` for names matching `LSP_HINT`. Unmatched
+names become `other`.
+
+### `BASH_CLASSES`
+
+A list of `(name, compiled_regex)` pairs, checked in this order. The command is
+split on `&&`, `||`, `;` and newlines; each segment is classified by the head of
+its pipeline, so `pytest | tail` classifies as `verify`. Across all segments, the
+earliest class in this list wins:
+
+```
+destructive  ->  outward  ->  verify  ->  vcs_write
+             ->  package  ->  vcs_read  ->  search  ->  run
+```
+
+Unmatched commands become `other`.
+
+### `RISK_SURFACE`
+
+Default pattern, overridable with `ROUTER_RISK_SURFACE`:
+
+```python
+r"auth|login|session|token|secret|credential|passw|crypto|encrypt|permission|rbac|\biam\b"
+r"|payment|billing|invoice|checkout|ledger|refund"
+r"|migrat|schema|\.sql\b|alembic"
+r"|terraform|\.tf\b|k8s|kube|helm|dockerfile|\.github/workflows|deploy|infra"
+r"|mutex|\block\b|concurren|race|thread|transaction"
+```
+
+Matched against `f"{target} {cmd}"` for each step, and separately against the
+user's latest message. A match counts only when the step modifies something: an
+`edit`, an MCP write, or a bash command not in `("search", "vcs_read",
+"verify")`.
+
+### Failure fingerprinting
+
+`_failure_signature(text)` enables detection of a repeated failure:
+
+1. Locate the `FAIL_TEXT` match and take its whole line.
+2. `re.sub(r"0x[0-9a-f]+|\d+", "N", line)`
+3. `re.sub(r"(/[\w.\-]+)+", "/P", line)`
+4. `hashlib.sha1(line).hexdigest()[:8]`
+
+`same_failure_repeats` counts matching signatures only since the last passing
+check. A passing check resets the count.
+
+`_attach_result` treats a step as failed on `is_error` or a `FAIL_TEXT` match. If
+both `FAIL_TEXT` and `PASS_TEXT` match, it re-tests with the stricter pattern
+`r"\b[1-9]\d* (failed|errors?)\b|Traceback|FAILED"`.
+
+## `pick_tier_v2`
+
+`top = n_tiers - 1`, `mid = min(1, n_tiers - 1)`. Steps in order:
+
+1. **Phase.** If confidence in `phase` is below `ROUTER_MIN_CONFIDENCE` (0.45),
+   substitute `_phase_hint`.
+2. **Hold.** `phase == "housekeeping"` or `trajectory == "blocked_on_human"`
+   returns `tier = None`.
+3. **Default tier by phase**, per the table above.
+4. **Demand adjustment**, summed then clamped to `[-1, +1]`:
+
+   | Condition | Adjustment |
+   | --- | --- |
+   | `next_step_demand > 1.4` | +1 |
+   | `next_step_demand < 0.6` | -1 |
+   | `cross_cutting > 0.7` | +1 |
+   | `phase == implement` and `spec_completeness > 1.4` | +1 |
+   | `phase == explore` and `searches_with_large_results >= 2` and no LSP | +1 |
+
+   The demand conditions are gated on confidence being at least 0.45.
+5. **Repo floor.** `repo_specific > 0.7` and phase in
+   `(implement, debug, review)` sets a floor of `mid`.
+6. **Error cost.** These set `safety = True`:
+
+   | Condition | Result |
+   | --- | --- |
+   | `irreversible > 0.6` and `risk_surface > 0.6` | floor `top` |
+   | `irreversible > 0.6` | floor `mid` |
+   | `risk_surface > 0.6`, `oracle_in_loop < 0.4`, demand >= 1.0, phase in (implement, debug, review, plan) | floor `top` |
+   | same but demand < 1.0 | floor `mid` |
+   | `oracle_in_loop > 0.7`, `risk_surface <= 0.6`, demand < 1.0, tier > 0, phase in (implement, debug, verify) | tier -1 |
+
+   `oracle_in_loop` defaults to `0.6` when `check_runs > 0` and `0.0` otherwise,
+   and is clamped to a maximum of `0.3` when `check_runs == 0`.
+   `risk_surface` is raised to at least `0.75` when `risk_surface_hits` is
+   non-empty. `irreversible` is raised to at least `0.75` when the phase is
+   `integrate` and there were outward, destructive or MCP-write commands.
+7. **Trajectory**, relative to `up_from = max(tier, current)`:
+
+   | Condition | Result |
+   | --- | --- |
+   | `same_failure_repeats >= 3` or `trajectory == thrashing` | `min(top, up_from+1)`, safety |
+   | `trajectory == drifting` | +1 |
+   | `unverified_confidence > 0.7` and `edits_since_last_check >= 3` | floor `mid` |
+   | `user_correcting > 0.65` | +1, safety, sticky |
+8. **Review.** `review_depth == security_or_design` sets `top`.
+   `review_depth == conformance` with `risk_surface <= 0.6` caps at `mid`. In all
+   cases `tier = max(tier, author_tier)`, where `author_tier` is the tier of the
+   model that produced the edits being reviewed, tracked by `note_authorship()`
+   in the proxy.
+9. **Overrides and caps.**
+
+   | Condition | Result |
+   | --- | --- |
+   | plan mode active | `top` |
+   | `thinking_budget >= 16000` | floor `mid` |
+   | `canonical > 0.7` and not safety | cap `top - 1` |
+   | `agent_role == "explore"` and not safety | cap `mid` |
+10. **Effort.** Only reduces. Applied when `not safety`, not plan mode, and
+    `trajectory not in ("thrashing", "drifting")`:
+
+    | Condition | Effort |
+    | --- | --- |
+    | demand < 0.6, phase in (explore, verify, integrate, implement) | `low` |
+    | demand <= 1.2, those phases plus `clarify` | `medium` |
+    | otherwise | `None`, leaving the client's setting |
+
+### Return value
+
+```python
+{"tier":    int | None,   # index into ROUTER_TIERS. None = hold current.
+ "reasons": list[str],    # e.g. ["debug phase", "thrashing (same failure x3)"]
+ "safety":  bool,         # floor. apply_cache_policy must not go below it.
+ "sticky":  bool,         # floor persists for the whole work unit
  "effort":  None | "medium" | "low"}
 ```
 
-`safety` and `sticky` are the entire interface to the cost layer. The ontology
-never sees a price, so this is how it says "do not let arithmetic talk you out of
-this one".
+`safety` and `sticky` are the only interface to the cost stage. This module has no
+access to prices.
 
-## When the router re-decides
+## Recheck triggers
 
-Rechecks are **event-driven**, and the cadence is only a backstop. A
-tool-results-only turn is held for free unless one of these fires:
+`recheck_reason(prev, ledger, run_len, every=6)` compares the current ledger
+summary against the previous one and returns the first matching trigger, or
+`None`:
 
-| Trigger | Why |
+| Trigger | Condition |
 | --- | --- |
-| the phase shifted | explore becoming implement is a different job |
-| a check failed twice consecutively | one failure is normal, two is a pattern |
-| the same failure came back a third time | the approach is wrong, not the edit |
-| a risk surface was touched for the first time | blast radius just changed |
-| a skill loaded | new capability, likely new kind of work |
-| five edits piled up with no check | nothing is catching mistakes any more |
-| `ROUTER_RECHECK_EVERY` turns elapsed | fallback only, default 6 |
+| phase shift | `phase != prev.phase` |
+| repeated check failure | `consecutive_failures >= 2` and greater than previous |
+| repeated identical failure | `same_failure_repeats >= 3` and greater than previous |
+| new risk surface | `risk_surface_hits` grew |
+| skill loaded | `skills_loaded` grew |
+| unchecked edits | `edits_since_last_check >= 5` and greater than previous |
+| cadence | `run_len % every == 0` |
 
-A recheck costs about 500 input tokens to Jev, a few thousandths of a cent. The
-real cost is the roughly 100ms it adds to that turn, which is why it is gated on
-something having actually happened.
+A classifier request costs approximately 500 input tokens, around
+$0.000021 at `ROUTER_JEV_PRICE_IN`. The latency it adds is 70 to 500ms.
 
-## Limits, stated plainly
+## Known limitations
 
-- **`irreversible` predicts, it cannot gate.** The router sees history. A
-  `git push` or a `terraform apply` appears in the ledger only after it ran.
-  Gating belongs in a `PreToolUse` hook or `permissions.deny`.
-- **The pass/fail regexes are heuristics.** There is a guard for the case where a
-  verify command's output matches both, but output formats vary and this will be
-  wrong sometimes.
-- **Role sniffing will rot.** Subagent roles are inferred from the `system` text.
-  That is a guess about prose, and prose changes.
-- **Tool names drift between releases.** `Task` versus `Agent`, `TodoWrite`
-  versus `TaskCreate`, and current macOS and Linux builds dropping `Grep` and
-  `Glob` in favour of searching through Bash. Every name-dependent table lives at
-  the top of the file so it can be corrected without touching logic. Verify
-  against your own traces.
-- **Jev reads text and structured state, not images.** Screenshot-heavy turns are
-  judged on their text and ledger alone. If that is your workflow, add a check
-  for image blocks and pin those upward.
-- **Every threshold above is a prior.** 0.45, 0.6, 0.7, 0.75, 1.4: none of them
-  were fitted to data. They are starting guesses that seemed defensible. The
-  calibration path is in [DEVELOPER.md](DEVELOPER.md): turn on tracing, join each
-  decision to the outcome labels on the following decisions of the same session,
-  and get `P(check passes | tier, phase, demand)` for your own repo.
+- `irreversible` is a prediction. Tool calls appear in the request body only after
+  they have run, so this cannot block an action. Use a `PreToolUse` hook or
+  `permissions.deny`.
+- `FAIL_TEXT` and `PASS_TEXT` are heuristics. Output formats vary.
+- `ROLE_SNIFF` infers subagent roles from prose in the `system` field and will
+  break when that prose changes.
+- Tool names change between Claude Code releases: `Task` versus `Agent`,
+  `TodoWrite` versus `TaskCreate`, and current macOS and Linux builds omit `Grep`
+  and `Glob` in favour of searching through Bash.
+- The classifier receives text and structured values, not images. Requests
+  containing screenshots are classified on their text and ledger alone.
+- The thresholds above (0.45, 0.6, 0.65, 0.7, 0.75, 1.4) are defaults, not fitted
+  values. See [DEVELOPER.md](DEVELOPER.md#tracing-and-calibration) for deriving
+  `P(check passes | tier, phase, demand)` from trace data.
 
-## Running the ontology on its own
+## Running the module directly
 
-It is pure stdlib and needs no key, so the deterministic half is directly
-testable:
+`jev_ontology.py` is stdlib-only and requires no API key:
 
 ```bash
 python3 jev_ontology.py
 ```
 
-That builds a synthetic session, a refund-rounding bug where the same test keeps
-failing, and prints the extracted ledger plus the tier it picks with **no Jev
-answers at all**. The tail of the real output:
+It constructs a synthetic session (a rounding bug in `services/payments/refund.py`
+with the same test failing three times), prints the extracted ledger, and calls
+`pick_tier_v2` with an empty answers dict. Output tail:
 
 ```
 state: 2007 chars (~501 tokens, ~$0.000021 per Jev call)
@@ -374,9 +441,6 @@ policy : {'tier': 2,
           'safety': True, 'sticky': False, 'effort': None}
 ```
 
-Worth reading closely. Jev answered nothing, so phase confidence is 0.00 and the
-tool-derived hint takes over. The facts alone, three identical failure signatures
-against a file under `services/payments`, are enough to reach the top tier and set
-a safety floor that the cache policy may not undercut. The whole judgment cost
-about two hundredths of a cent of Jev, and in this run it did not need Jev at
-all.
+With no classifier answers, `phase` confidence is 0.00 and `_phase_hint` supplies
+`debug`. The three matching failure signatures trigger the thrashing rule, which
+selects tier 2 and sets `safety = True`.

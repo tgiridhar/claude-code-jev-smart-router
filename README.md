@@ -1,64 +1,133 @@
 # claude-code-jev-smart-router
 
-Per-step model routing for Claude Code, judged by Jev.
+An HTTP proxy for Claude Code that selects the Claude model per request.
 
-A proxy sits on `ANTHROPIC_BASE_URL`. For every turn it rebuilds a factual
-ledger of the session from the request body, asks Jev 15 atomic questions about
-the agent's **next step**, picks a model, and forwards the request upstream with
-only the `model` field changed.
+It listens on `ANTHROPIC_BASE_URL`, intercepts `POST /v1/messages`, extracts
+facts about the session from the request body, sends those facts to the Jev API
+for classification, maps the response to a model, and forwards the request
+upstream to `api.anthropic.com` with only the `model` field rewritten. Response
+streams are relayed unmodified.
 
-> **Proof of concept.** It works and it is honest about what it does not know.
-> You need your own TypeSafe key. Every threshold in the policy is a prior, not
-> a tuned value. Measure your own traffic before you trust it with real spend.
+Two modules:
 
-## The gap it fills
+| File | Contents | Dependencies |
+| --- | --- | --- |
+| `jev_ontology.py` | Fact extraction, the question set, the tier policy | stdlib only |
+| `jev_router.py` | The proxy, cache cost arithmetic, telemetry, dashboard | fastapi, httpx |
 
-Claude Code already switches models three ways. `opusplan` switches at the plan
-boundary. `fallbackModel` switches when a request fails. Automatic fallback
-switches on a safety classifier. None of them look at how hard the turn is.
+## Status
 
-## Why this is an AI-SDLC accelerator and not a length heuristic
+Proof of concept. Specifically:
 
-Routing on prompt size is the obvious thing and it is wrong. A one-line request
-to rotate a credential is harder than a thousand-line file to reformat.
+- Requires a TypeSafe API key. Without one, every request forwards unrouted.
+- The thresholds in the tier policy are unfitted defaults, not measured values.
+- Savings are unverified. Prompt caching can make per-request routing more
+  expensive than a single pinned model. Measure before relying on it.
 
-So the unit being routed is the next step of a work unit, placed in a software
-lifecycle: **clarify, explore, plan, implement, debug, verify, review,
-integrate**. Where the agent is in that lifecycle, and what a mistake there
-would cost, is what picks the model. Searching is cheap cognition. Deciding an
-approach is not. A wrong edit that the test suite catches in ten seconds is
-cheap. The same wrong edit in an auth path with nothing checking it is not.
+## Routing logic
 
-That is the whole idea, and it collapses to one line:
+Claude Code already changes models in three situations: `opusplan` at the plan
+boundary, `fallbackModel` on request failure, and automatic fallback on a safety
+classifier. None of them consider task difficulty.
 
-**tier = cognitive demand &#215; cost of an undetected error**
+Routing on prompt length does not work either. A one-line request to rotate a
+credential is harder and riskier than a thousand-line file to reformat.
 
-![Model tier as demand against the cost of an undetected error](docs/img/tier-grid.svg)
+This proxy classifies each request along two dimensions:
 
-## How it fits together
+1. **Task phase.** One of nine software lifecycle phases: `clarify`, `explore`,
+   `plan`, `implement`, `debug`, `verify`, `review`, `integrate`,
+   `housekeeping`. Each phase has a default tier.
+2. **Cost of an undetected error.** Whether a check the agent is already running
+   would catch a mistake (`oracle_in_loop`), whether the work touches sensitive
+   code such as authentication or migrations (`risk_surface`), and whether the
+   next step acts outside the working tree (`irreversible`).
+
+The source states the intent as `tier = cognitive demand x cost of an undetected
+error` (`jev_ontology.py:28`). In practice it is a sequence of conditionals in
+`pick_tier_v2`, documented in [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
+
+Resulting tiers for `phase = implement`:
+
+![Tier selected for each combination of task difficulty and error cost](docs/img/tier-grid.svg)
+
+Rows 3 and 4 set a floor. The cache cost check described below cannot select a
+tier below a floor.
+
+## Cache management
+
+Each model maintains a separate prompt cache. Switching models mid-conversation
+causes the new model to re-read the conversation prefix at full input price. On
+long sessions that prefix is most of the token volume, so unconditional
+per-request switching can cost more than pinning a single model.
+
+The proxy therefore prices each switch before making it. `switch_delta()`
+returns a per-turn saving and a one-time cost:
+
+```
+one_time  = prefix_tokens * ROUTER_CACHE_WRITE_MULT * in_price(target) / 1e6
+per_turn  = current_turn_cost - target_turn_cost
+```
+
+Three cases:
+
+| Cache state | Behavior |
+| --- | --- |
+| Cold (no request within `ROUTER_CACHE_TTL_SAFE`, default 240s) | Switch. Nothing to lose. |
+| Warm, downgrade requested | Switch only if `per_turn * ROUTER_SWITCH_HORIZON > one_time` |
+| Warm, upgrade requested | Switch immediately, without pricing |
+
+Input token prices are read from the relayed response stream
+(`input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`), not
+estimated. Prices per model come from `ROUTER_PRICES`.
+
+Note that a tier is a price per token, not a cost per task. A cheaper model that
+emits more tokens or takes more turns can cost more per completed task, so
+`switch_delta` prices each side using that model's observed output volume. If the
+cheaper model's measured output rate is high enough, the saving is negative and
+no switch occurs.
+
+## Fact extraction
+
+Facts are computed from the request body in code, not asked of the classifier.
+`extract_ledger(body)` is a pure function, recomputed each request rather than
+cached, so it survives restarts.
+
+| Table | Purpose |
+| --- | --- |
+| `TOOL_KINDS` | 29 tool names mapped to 11 kinds (`read`, `search`, `edit`, `bash`, `subagent`, `todo`, `skill`, `plan`, `ask`, `web`, `meta`) |
+| `BASH_CLASSES` | 8 bash command classes, checked in order, most consequential match wins |
+| `FAIL_TEXT` / `PASS_TEXT` | Whether a tool result indicates a failed check |
+| `RISK_SURFACE` | Regex for sensitive paths and identifiers |
+| `ROLE_SNIFF` | Subagent role inferred from the `system` field |
+
+Tool definitions are forwarded unchanged. The proxy does not filter, reorder or
+block tools.
+
+## Architecture
 
 ```mermaid
 flowchart LR
     dev["Developer"]
     cc["Claude Code<br/><small>ANTHROPIC_BASE_URL</small>"]
     r["<b>jev_router</b><br/><small>FastAPI proxy, :8787</small>"]
-    led["<b>Ledger</b><br/><small>pure code, &lt;1ms</small>"]
-    jev["<b>Jev</b><br/><small>TypeSafe System One<br/>15 questions, ~100ms</small>"]
-    up["<b>api.anthropic.com</b><br/><small>chosen model</small>"]
+    led["<b>extract_ledger</b><br/><small>pure code, &lt;1ms</small>"]
+    jev["<b>Jev API</b><br/><small>api.typesafe.ai<br/>15 questions, ~100ms</small>"]
+    up["<b>api.anthropic.com</b><br/><small>selected model</small>"]
     dash["Dashboard<br/><small>/dashboard</small>"]
-    tr[("Traces<br/><small>opt-in, local</small>")]
+    tr[("Trace files<br/><small>opt-in, local</small>")]
 
     dev -->|prompt| cc
     cc -->|"POST /v1/messages"| r
     r --> led
-    led -->|"measured facts"| jev
-    jev -->|"judgments"| r
+    led -->|"extracted facts"| jev
+    jev -->|"classifications"| r
     r -->|"same body,<br/>model field rewritten"| up
-    up -.->|"stream relayed verbatim,<br/>usage read in passing"| r
+    up -.->|"stream relayed unmodified,<br/>usage counters read"| r
     r -.-> cc
     r --> dash
     r -.-> tr
-    dev -->|watches| dash
+    dev -->|reads| dash
 
     style r fill:#fef3c7,stroke:#a87b0b,stroke-width:2px
     style jev fill:#e0f2fe,stroke:#0369a1
@@ -66,35 +135,13 @@ flowchart LR
     style up fill:#f3f4f6,stroke:#6b7280
 ```
 
-The credential arrives and leaves untouched. `cache_control` markers, the
-`system` block array and the `anthropic-beta` header all pass through verbatim.
-The only thing that changes is which model serves the turn.
+Passed through unmodified: the client credential, `cache_control` markers, the
+`system` block array and its ordering, `anthropic-beta`, `anthropic-version`, and
+the `?beta=true` query parameter. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full compliance list and the
+known gaps.
 
-## How it decides, in three layers
-
-Keeping these separate is the point. Conflating them is how a router like this
-loses money.
-
-1. **What the work wants.** Nine SDLC phases set a base tier, then cognitive
-   demand and blast radius move it. `oracle_in_loop`, `risk_surface` and
-   `irreversible` are first-class axes, because a cheap model is safe when a
-   check in the loop catches its mistakes and dangerous when nothing does.
-   Safety picks set a **floor** that no downgrade may cross.
-   See [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
-2. **What the prompt cache allows.** Each model keeps its own cache, so
-   switching mid-conversation makes the new model re-read the entire prefix at
-   full input price. On a long session that prefix is most of your tokens, so a
-   naive per-turn router can cost several times what pinning Opus costs. Every
-   switch is therefore priced, not counted. A warm-cache downgrade has to pay
-   for itself within three turns. Upgrades are never for sale.
-   See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-3. **What the tool stream says.** Tool calls are the fact source. Tool names map
-   to 13 kinds, bash commands sort into 9 consequence classes most-consequential
-   first, and tool results yield pass/fail, failure fingerprints and
-   edits-since-last-check. The router reads the tool stream. It never prunes,
-   reorders or blocks tools.
-
-## Quickstart
+## Installation
 
 ```bash
 pip install -r requirements.txt
@@ -103,82 +150,103 @@ export TYPESAFE_API_KEY=...        # console.typesafe.ai/settings/keys
 uvicorn jev_router:app --port 8787
 ```
 
-Then point Claude Code at it. On a Claude subscription (Pro, Max, Team) set the
-base URL and nothing else:
+Run a single worker. Session state is in-process, so `--workers N` routes
+same-session requests to processes with different state.
+
+Bind to loopback. The `/router/*` control endpoints have no authentication.
+
+## Connecting Claude Code
+
+### Subscription (Pro, Max, Team)
 
 ```bash
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 claude
 ```
 
-Do **not** set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` on that path, and
-do not run `/logout`. `ANTHROPIC_BASE_URL` on its own does not replace the
-subscription: traffic routes through the proxy while your saved claude.ai login
-stays the active credential. Setting a gateway credential is what replaces it,
-and then the traffic bills per token to whoever owns that credential.
+Do not set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` on this path, and do not
+run `/logout`. Setting `ANTHROPIC_BASE_URL` alone does not replace the
+subscription: requests route through the proxy while the saved claude.ai login
+remains the active credential. Setting a gateway credential replaces the
+subscription, and traffic then bills per token to the owner of that credential.
 
-With an API key instead, export `ANTHROPIC_API_KEY` as usual. Both paths, the
-`/model` override trick and all 28 environment variables are in
+On a subscription, routing conserves usage limit rather than reducing a bill.
+Claude Code also stops validating plan requirements behind a gateway, so
+`ROUTER_TIERS` must list only models the plan serves.
+
+### API key
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # used only if the client sends no credential
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+claude
+```
+
+To persist, add to `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8787"
+  }
+}
+```
+
+Configuration reference for all 28 environment variables, and how to keep
+`/model` working as a manual override, is in
 [docs/DEVELOPER.md](docs/DEVELOPER.md).
-
-No key? The router still runs. It forwards every request untouched and routes
-nothing.
 
 ## Dashboard
 
-`GET /dashboard` is a single self-contained page, no build step, polling
-`/router/metrics` every 2.5s. It shows a 30 minute rail of decisions (filled
-means the model moved, hollow means it held, height is the price tier), spend
-against a pin-the-top-tier baseline, the cache hit gauge, traffic by model,
-classifier p50 and p95, and a decision feed with the reasoning for each pick.
-There is a live toggle to turn routing off without restarting.
+`GET /dashboard` serves a single HTML page with no build step, polling
+`/router/metrics` every 2.5 seconds. It displays:
+
+- Decisions over the last 30 minutes. Filled marks are switches, hollow marks are
+  holds, height is the price tier.
+- Spend compared against a baseline of pinning the highest tier.
+- Cache hit ratio, request counts per model, classifier p50 and p95 latency.
+- A decision log with the reason and cost arithmetic for each selection.
+- A toggle that disables routing without restarting.
 
 <!-- Screenshot to come: docs/img/dashboard.png -->
 
-The savings number on that page is an **upper bound**. It prices a weaker
-model's extra turns at the top tier. The honest number comes from traces.
+The spend comparison on that page is an upper bound. It prices the weaker model's
+additional turns at the highest tier. Trace data gives an accurate figure.
 
-## Limits, stated plainly
+## Limitations
 
-- **It observes, it does not gate.** A `git push`, a `terraform apply`, an MCP
-  write: all of them appear in the ledger only after they ran. The
-  `irreversible` question predicts the next step, it cannot stop the last one.
-  Gating belongs in a `PreToolUse` hook or `permissions.deny`.
-- **One process.** State is a tier integer and a few counters per session, in
-  memory. Run uvicorn with its default single worker. `--workers N` gives
-  same-session requests different sticky tiers and hysteresis quietly stops
-  working.
-- **No images to Jev.** Turns carrying screenshots are judged on their text and
-  ledger alone.
-- **Tool names drift** between Claude Code releases. Everything name-dependent
-  is isolated in tables at the top of `jev_ontology.py` so it can be corrected
-  without touching logic. Re-check after upgrading.
-- **A tier is a price per token, not a cost per task.** A cheaper model that
-  needs more turns is not cheaper. The router prices each side with its own
-  observed output volume, and if the "cheaper" model talks enough more it stays
-  put.
+- **Observation only.** Tool calls appear in the request body after they have
+  run, so `irreversible` predicts the next step and cannot block the previous
+  one. Use a `PreToolUse` hook or `permissions.deny` to block actions.
+- **Single process.** Session state is a tier index and counters in memory,
+  capped at 512 sessions.
+- **No image input to the classifier.** Requests containing screenshots are
+  classified on their text and extracted facts only.
+- **Tool names change between Claude Code releases.** `Task` versus `Agent`,
+  `TodoWrite` versus `TaskCreate`, and current macOS and Linux builds omit `Grep`
+  and `Glob`. All name-dependent tables are at the top of `jev_ontology.py`.
+- **`count_tokens` is forwarded without rewriting its model field**, so
+  `/context` reports the model Claude Code believes it is using.
+- **Only the Anthropic Messages format is served.** Not Bedrock, not Agent
+  Platform.
 - Anthropic does not endorse, maintain or audit third-party gateways, and does
   not support routing Claude Code to non-Claude models through one.
 
-## Docs
+## Documentation
 
-| | |
+| File | Contents |
 | --- | --- |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Context and container views, request lifecycle, the decision tree, the cache economics |
-| [docs/ONTOLOGY.md](docs/ONTOLOGY.md) | The ontology, visualized. Nine phases, 15 questions, the scoring walk-through |
-| [docs/DEVELOPER.md](docs/DEVELOPER.md) | Install, wiring, all 28 knobs, tracing and calibration, extending, troubleshooting |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Request lifecycle, decision order, cache cost arithmetic, state, failure handling, protocol compliance |
+| [docs/ONTOLOGY.md](docs/ONTOLOGY.md) | The nine phases, the 15 questions with their definitions, the `pick_tier_v2` conditionals |
+| [docs/DEVELOPER.md](docs/DEVELOPER.md) | Installation, endpoint list, all 28 environment variables, tracing and calibration, troubleshooting |
 
-`ROUTING NOTES` at the foot of `jev_router.py` is the authoritative commentary
-on why the cache interaction decides whether this saves money. The docs point at
-it rather than copying it.
+`ROUTING NOTES` at the end of `jev_router.py` contains the author's commentary on
+the cache interaction and is more current than these documents.
 
-## Before you trust it with real spend
+## Measuring it
 
-Run a week pinned to Opus, then a week routed, and compare `/cost`. Prompt
-caching means the naive version of this loses money, and the only way to know
-which side you land on is to measure your own traffic. On a subscription you are
-conserving usage limit rather than reducing a bill, so judge it on how often you
-hit limits instead.
+Run one week with a pinned model, one week routed, and compare `/cost`. On a
+subscription, compare how often you hit usage limits instead.
 
 ## License
 
