@@ -111,14 +111,56 @@ Failure is not fatal. The call has a timeout, and any error, timeout or
 non-200 response returns no answers, at which point the session keeps its current
 tier or the request forwards as received.
 
+## Example run
+
+Prompt: `make a to do app in single html`. Five requests, 31 seconds wall clock.
+
+Claude Code was configured with Opus. Opus served none of it.
+
+| # | Model | Decision |
+| --- | --- | --- |
+| 1 | haiku | utility call (`max_tokens=1`), pinned, session state untouched |
+| 2 | sonnet | plan phase, canonical build, capped (0.94), first turn |
+| 3 | sonnet | plan phase, canonical build, capped (0.93), unchanged |
+| 4 | haiku | utility call (`max_tokens=64`), pinned, session state untouched |
+| 5 | sonnet | agentic continuation, held (no event, no classify) |
+
+| Measure | Value |
+| --- | --- |
+| Spent through the router | $0.4299 |
+| Same tokens pinned to Opus | $0.8533 |
+| Difference | $0.4233 (50%) |
+| Classifier | $0.0001 over 2 calls |
+| Input served from cache | 40% |
+| Classifier latency, median | 294 ms |
+
+Four things in that ledger are the documented behaviour firing:
+
+- **Opus never ran.** A to-do app in one HTML file is a canonical artifact, so the
+  `canonical` rule capped the tier one rung below the top. The cap and its
+  confidence appear in the reason string.
+- **Two of five requests reached the classifier.** Two were sidecar calls pinned
+  by `max_tokens` and excluded from session state; one was a tool-result
+  continuation held without a classify because no recheck trigger fired.
+- **294 ms median against 31 s of work** is well under 1% of wall clock.
+- **$0.0001 of classifier spend against $0.4299 routed** is the cost of the
+  decision against the cost of the work.
+
+Read the 50% as an upper bound, which is how the dashboard labels it. It prices
+the same token counts at Opus rates, and a model that needed more turns would not
+have produced the same token counts. This is one task in one session, not a
+benchmark.
+
 ## Status
 
 Proof of concept. Specifically:
 
 - Requires a TypeSafe API key. Without one, every request forwards unrouted.
 - The thresholds in the tier policy are unfitted defaults, not measured values.
-- Savings are unverified. Prompt caching can make per-request routing more
-  expensive than a single pinned model. Measure before relying on it.
+- Savings are not benchmarked. One measured run is in
+  [Example run](#example-run). On other workloads prompt caching can make
+  per-request routing more expensive than a single pinned model. Measure before
+  relying on it.
 - The default prices in `ROUTER_PRICES` are list prices recorded at the time of
   writing. Verify them before trusting the breakeven arithmetic.
 
@@ -306,7 +348,7 @@ Configuration reference for all 28 environment variables, and how to keep
 - A decision log with the reason and cost arithmetic for each selection.
 - A toggle that disables routing without restarting.
 
-<!-- Screenshot to come: docs/img/dashboard.png -->
+![The router dashboard after the example run](docs/img/dashboard.png)
 
 The spend comparison on that page is an upper bound. It prices the weaker model's
 additional turns at the highest tier. Trace data gives an accurate figure.
