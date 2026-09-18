@@ -61,6 +61,14 @@ ARMS = [
         note="Pinned Opus. The ground truth the router's baseline_top is trying to estimate.",
     ),
     Arm(
+        "control-haiku",
+        model="haiku",
+        router_env={"ROUTER_ENABLED": "0"},
+        needs_key=False,
+        note=("Pinned Haiku. The floor: what the cheapest tier can and cannot do "
+              "unaided. Without it there is no reference for what the money buys."),
+    ),
+    Arm(
         "router-3tier",
         model="opus",
         router_env={
@@ -93,4 +101,14 @@ JUDGED = [a.name for a in ARMS]
 
 # Pinned Opus is the yardstick. The two ladders answer whether the middle rung
 # earns its place.
-MAIN = ["control-opus", "router-3tier", "router-haiku-opus"]
+# Arms kept runnable for reproducibility but left out of reports. The question
+# they answered is closed, and carrying a losing configuration through every
+# document invites the reader to weigh it again.
+RETIRED = ["router-haiku-opus"]
+
+# The two-rung Haiku/Opus ladder is settled and out of the default matrix. It
+# cost 10.8% MORE than pinned Opus over 9 runs, because with no middle rung it
+# falls back to Opus on anything Haiku cannot take and adds classifier overhead
+# on top. The arm definition stays for reproducibility; pass it explicitly with
+# --arms if you want to re-measure it.
+MAIN = ["control-opus", "control-haiku", "router-3tier"]

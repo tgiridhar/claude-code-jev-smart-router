@@ -254,8 +254,9 @@ between Claude Code releases: `Task` versus `Agent`, `TodoWrite` versus
 against recorded traces after upgrading.
 
 **Add or remove a tier.** Add the model to `ROUTER_TIERS` and give it an entry in
-`ROUTER_PRICES`. A two-tier ladder is valid if trace data shows the middle tier
-costs more per completed task than the highest one.
+`ROUTER_PRICES`. Measure before removing a rung: on the benchmarked tasks the
+middle rung is where nearly all the work lands, and deleting it pushes that work
+back up to the top tier rather than down to the cheapest one.
 
 ### Invariants
 

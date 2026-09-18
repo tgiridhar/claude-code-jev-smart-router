@@ -49,7 +49,10 @@ def main():
 
     runs = results["runs"]
     tasks_seen = sorted({r["task"] for r in runs}, key=lambda n: [t.name for t in tasks_mod.TASKS].index(n))
-    arms_seen = [a_ for a_ in [x.name for x in arms_mod.ARMS] if any(r["arm"] == a_ for r in runs)]
+    retired = set(getattr(arms_mod, "RETIRED", []))
+    arms_seen = [a_ for a_ in [x.name for x in arms_mod.ARMS]
+                 if a_ not in retired and any(r["arm"] == a_ for r in runs)]
+    runs = [r for r in runs if r["arm"] not in retired]
     # Group all reps of a cell. Taking the last rep would report whichever run
     # happened to finish last as though it were the result.
     cells = {}
@@ -194,23 +197,31 @@ def main():
 
     # ---- aggregate ---------------------------------------------------------
     w("## Aggregate\n")
-    w("| Arm | Runs | Fully working builds | Total cost | Total measured Opus | Measured saving | Mean quality | Mean wall |")
-    w("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    any_q = any(bool(t.get("absolute")) for t in judg.get("tasks", []))
+    agg_cols = ["Arm", "Runs", "Runs meeting every requirement", "Total cost",
+                "Against pinned Opus"] + (["Mean quality"] if any_q else []) + ["Mean wall"]
+    w("| " + " | ".join(agg_cols) + " |")
+    w("| " + " | ".join("---" for _ in agg_cols) + " |")
+    # Baseline is what the pinned-Opus arm actually spent over the same cells.
+    # Summing per-task medians instead gives a different number and makes the
+    # Opus arm show a saving against itself.
+    opus_total = sum(r["actual"] + r["jev_cost"] for r in runs if r["arm"] == "control-opus")
     for an in arms_seen:
         rs = [r for r in runs if r["arm"] == an]
         if not rs:
             continue
         tot = sum(r["actual"] + r["jev_cost"] for r in rs)
-        truth = sum(r["measured_opus"] for r in rs if r["measured_opus"])
+        truth = opus_total
         ok = sum(1 for r in rs if r.get("fr_total") and r["fr_met"] == r["fr_total"])
         scores = [jby[r["task"]]["absolute"][an]["overall"]
                   for r in rs if r["task"] in jby and an in jby[r["task"]].get("absolute", {})]
-        save = f"{100.0 * (truth - tot) / truth:.1f}%" if truth else "-"
-        w(f"| `{an}` | {len(rs)} | {ok}/{len(rs)} | {usd(tot)} | {usd(truth) if truth else '-'} | "
-          f"{save} | {sum(scores)/len(scores):.2f} | {sum(r['wall_s'] for r in rs)/len(rs):.0f}s |"
-          if scores else
-          f"| `{an}` | {len(rs)} | {ok}/{len(rs)} | {usd(tot)} | {usd(truth) if truth else '-'} | "
-          f"{save} | - | {sum(r['wall_s'] for r in rs)/len(rs):.0f}s |")
+        save = ("-" if an == "control-opus" else
+                (f"{100.0 * (truth - tot) / truth:.1f}%" if truth else "-"))
+        row = [f"`{an}`", str(len(rs)), f"{ok}/{len(rs)}", usd(tot), save]
+        if any_q:
+            row.append(f"{sum(scores)/len(scores):.2f}" if scores else "-")
+        row.append(f"{sum(r['wall_s'] for r in rs)/len(rs):.0f}s")
+        w("| " + " | ".join(row) + " |")
     w("")
 
     # ---- overstatement -----------------------------------------------------

@@ -71,7 +71,6 @@ that failure in practice: cache hits fell from 80% to 35% and the cheaper model 
 | `control-opus` | opus | disabled, pure passthrough | Pinned Opus. The ground truth the router's baseline_top is trying to estimate. |
 | `control-haiku` | haiku | disabled, pure passthrough | Pinned Haiku. The floor: what the cheapest tier can and cannot do unaided. Without it there is no reference for what the money buys. |
 | `router-3tier` | opus | haiku-4-5 / sonnet-5 / opus-5 | The shipped default ladder, on corrected prices. |
-| `router-haiku-opus` | opus | haiku-4-5 / opus-5 | Middle rung deleted. jev_router.py:1700 anticipates exactly this change. |
 
 Every arm runs through the router process, controls included, so all tokens are
 counted by the same sniffer and priced from the same table. Each run gets its own
@@ -102,12 +101,10 @@ Median of 3 runs per arm. Perfect means every requirement met on every run.
 | `control-opus` | 6/6 | 3/3 | 122s | $0.5486 | $0.5486 | 0.0% |
 | `control-haiku` | **4/6** | 0/3 | 38s | $0.0622 | $0.5486 | 88.7% |
 | `router-3tier` | **6/6** | 2/3 | 50s | $0.1196 | $0.5486 | 78.2% |
-| `router-haiku-opus` | **6/6** | 2/3 | 138s | $0.5903 | $0.5486 | -7.6% |
 
 Models the router served, summed over all runs of the cell:
 
 - `router-3tier`: sonnet-5 x9
-- `router-haiku-opus`: opus-5 x21
 
 ### secfind
 
@@ -132,12 +129,10 @@ Median of 3 runs per arm. Perfect means every requirement met on every run.
 | `control-opus` | 6/6 | 3/3 | 120s | $0.5045 | $0.5045 | 0.0% |
 | `control-haiku` | **5/6** | 1/3 | 32s | $0.0487 | $0.5045 | 90.3% |
 | `router-3tier` | 6/6 | 3/3 | 38s | $0.1194 | $0.5045 | 76.3% |
-| `router-haiku-opus` | 6/6 | 3/3 | 119s | $0.4762 | $0.5045 | 5.6% |
 
 Models the router served, summed over all runs of the cell:
 
 - `router-3tier`: sonnet-5 x9
-- `router-haiku-opus`: opus-5 x15
 
 ### algo
 
@@ -160,21 +155,18 @@ Median of 3 runs per arm. Perfect means every requirement met on every run.
 | `control-opus` | 20/20 | 3/3 | 48s | $0.2748 | $0.2748 | 0.0% |
 | `control-haiku` | **20/20** | 2/3 | 44s | $0.0593 | $0.2748 | 78.4% |
 | `router-3tier` | **20/20** | 2/3 | 37s | $0.1082 | $0.2748 | 60.6% |
-| `router-haiku-opus` | 20/20 | 3/3 | 91s | $0.4274 | $0.2748 | -55.5% |
 
 Models the router served, summed over all runs of the cell:
 
 - `router-3tier`: sonnet-5 x12
-- `router-haiku-opus`: opus-5 x13
 
 ## Aggregate
 
-| Arm | Runs | Fully working builds | Total cost | Total measured Opus | Measured saving | Mean quality | Mean wall |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `control-opus` | 9 | 9/9 | $4.4986 | $3.9837 | -12.9% | - | 97s |
-| `control-haiku` | 9 | 3/9 | $0.6318 | $3.9837 | 84.1% | - | 41s |
-| `router-3tier` | 9 | 7/9 | $1.1527 | $3.9837 | 71.1% | - | 40s |
-| `router-haiku-opus` | 9 | 8/9 | $4.6236 | $3.9837 | -16.1% | - | 120s |
+| Arm | Runs | Runs meeting every requirement | Total cost | Against pinned Opus | Mean wall |
+| --- | --- | --- | --- | --- | --- |
+| `control-opus` | 9 | 9/9 | $4.4986 | - | 97s |
+| `control-haiku` | 9 | 3/9 | $0.6318 | 86.0% | 41s |
+| `router-3tier` | 9 | 7/9 | $1.1527 | 74.4% | 40s |
 
 ## How far the dashboard overstates
 
@@ -185,27 +177,18 @@ Perceived saving against measured saving, per routed run:
 | `algo` / `router-3tier` | 59.9% | 58.5% | 1.4 points |
 | `algo` / `router-3tier` | 59.9% | 64.3% | -4.4 points |
 | `algo` / `router-3tier` | 59.9% | 60.6% | -0.7 points |
-| `algo` / `router-haiku-opus` | -0.0% | -55.5% | 55.5 points |
-| `algo` / `router-haiku-opus` | -0.0% | -152.4% | 152.4 points |
-| `algo` / `router-haiku-opus` | -0.1% | 4.1% | -4.2 points |
 | `bugfind` / `router-3tier` | 60.0% | 56.8% | 3.2 points |
 | `bugfind` / `router-3tier` | 60.0% | 78.4% | -18.4 points |
 | `bugfind` / `router-3tier` | 60.0% | 78.2% | -18.2 points |
-| `bugfind` / `router-haiku-opus` | -0.0% | -20.3% | 20.3 points |
-| `bugfind` / `router-haiku-opus` | -0.0% | 14.9% | -14.9 points |
-| `bugfind` / `router-haiku-opus` | -0.1% | -7.6% | 7.5 points |
 | `secfind` / `router-3tier` | 59.9% | 76.8% | -16.9 points |
 | `secfind` / `router-3tier` | 59.9% | 76.3% | -16.4 points |
 | `secfind` / `router-3tier` | 59.9% | 76.0% | -16.1 points |
-| `secfind` / `router-haiku-opus` | -0.1% | -13.2% | 13.1 points |
-| `secfind` / `router-haiku-opus` | -0.1% | 6.0% | -6.1 points |
-| `secfind` / `router-haiku-opus` | -0.1% | 5.6% | -5.7 points |
 
 ## Classifier
 
-- 43 calls across 18 routed runs
-- total classifier spend $0.0034
-- median latency 262 ms
+- 15 calls across 9 routed runs
+- total classifier spend $0.0012
+- median latency 276 ms
 
 ## What these numbers are not
 
