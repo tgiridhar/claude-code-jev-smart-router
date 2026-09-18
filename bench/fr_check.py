@@ -12,10 +12,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RUNS = os.path.join(HERE, "runs")
 FR = os.path.join(HERE, "fr")
 
+FIX = os.path.join(HERE, "fixtures")
+
 RUNNERS = {
     "todo":    ["node", os.path.join(FR, "todo.js"), "{work}/todo.html"],
     "pelican": ["node", os.path.join(FR, "pelican.js"), "{work}/pelican.svg"],
     "datasci": [sys.executable, os.path.join(FR, "datasci.py"), "{work}"],
+    # Ground truth, not opinion: defects planted on purpose, or a hidden suite.
+    "bugfind": [sys.executable, os.path.join(FR, "findings.py"),
+                os.path.join(FIX, "bugfind"), "{work}/REVIEW.md"],
+    "secfind": [sys.executable, os.path.join(FR, "findings.py"),
+                os.path.join(FIX, "secfind"), "{work}/SECURITY.md"],
+    "algo":    [sys.executable, os.path.join(FR, "algo.py"), "{work}"],
 }
 
 def run_one(task, work):

@@ -1,0 +1,113 @@
+{
+  "file": "app.py",
+  "count": 6,
+  "bugs": [
+    {
+      "id": "sql-injection",
+      "line": 52,
+      "symbol": "search_invoices",
+      "desc": "The q parameter is concatenated into SQL. A caller can break out of the LIKE literal and read or modify any table.",
+      "keywords": [
+        "sql inject",
+        "sqli",
+        "injection",
+        "concaten",
+        "parameteri",
+        "parametri",
+        "bound parameter",
+        "placeholder",
+        "untrusted input in"
+      ]
+    },
+    {
+      "id": "idor-missing-authz",
+      "line": 68,
+      "symbol": "get_invoice",
+      "desc": "Authenticated but not authorised: the query filters on invoice id only, never on customer_id, so any employee can read any customer's invoice.",
+      "keywords": [
+        "idor",
+        "authoriz",
+        "authoris",
+        "access control",
+        "ownership",
+        "any user can",
+        "any employee can",
+        "other users",
+        "not scoped",
+        "broken access",
+        "no check that",
+        "without verifying",
+        "belongs to"
+      ]
+    },
+    {
+      "id": "path-traversal",
+      "line": 86,
+      "symbol": "download",
+      "desc": "name is joined to the storage root unvalidated, so ../../etc/passwd or an absolute path escapes the directory and serves arbitrary files.",
+      "keywords": [
+        "path travers",
+        "directory travers",
+        "../",
+        "arbitrary file",
+        "escape",
+        "realpath",
+        "abspath",
+        "outside the",
+        "lfi"
+      ]
+    },
+    {
+      "id": "hardcoded-secret",
+      "line": 17,
+      "symbol": "ADMIN_API_TOKEN",
+      "desc": "Admin token committed in source. Anyone with repository read access gains the full invoice export.",
+      "keywords": [
+        "hardcod",
+        "hard-cod",
+        "in source",
+        "committed",
+        "secret",
+        "credential",
+        "environment variable",
+        "in the code",
+        "plaintext"
+      ]
+    },
+    {
+      "id": "timing-unsafe-compare",
+      "line": 96,
+      "symbol": "admin_export",
+      "desc": "Token compared with != , which short-circuits on the first differing byte and leaks length and prefix through response timing.",
+      "keywords": [
+        "timing",
+        "constant time",
+        "constant-time",
+        "compare_digest",
+        "side channel",
+        "side-channel",
+        "short-circuit",
+        "byte by byte"
+      ]
+    },
+    {
+      "id": "weak-password-hash",
+      "line": 113,
+      "symbol": "set_password",
+      "desc": "Passwords hashed with unsalted MD5. Fast to brute force and trivially reversed via rainbow tables; identical passwords produce identical digests.",
+      "keywords": [
+        "md5",
+        "weak hash",
+        "unsalted",
+        "no salt",
+        "bcrypt",
+        "scrypt",
+        "argon2",
+        "pbkdf2",
+        "rainbow",
+        "fast hash",
+        "password hash"
+      ]
+    }
+  ]
+}

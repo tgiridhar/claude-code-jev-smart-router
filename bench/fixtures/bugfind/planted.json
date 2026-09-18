@@ -1,0 +1,115 @@
+{
+  "file": "orders.py",
+  "count": 6,
+  "bugs": [
+    {
+      "id": "mutable-default",
+      "line": 49,
+      "symbol": "add_line",
+      "desc": "Mutable default argument: audit=[] is shared across all calls, so the audit trail accumulates every line from every order for the process lifetime.",
+      "keywords": [
+        "mutable default",
+        "default argument",
+        "shared list",
+        "shared default",
+        "default mutable",
+        "mutable arg",
+        "same list",
+        "persists between calls",
+        "accumulat"
+      ]
+    },
+    {
+      "id": "float-equality-money",
+      "line": 58,
+      "symbol": "is_fully_refunded",
+      "desc": "Float equality on currency. Rounding means a fully refunded order can compare unequal, so the order never reports as fully refunded.",
+      "keywords": [
+        "float",
+        "floating point",
+        "exact compar",
+        "decimal",
+        "rounding",
+        "precision",
+        "epsilon",
+        "never be equal",
+        "may not be equal"
+      ]
+    },
+    {
+      "id": "naive-datetime",
+      "line": 72,
+      "symbol": "apply_refund",
+      "desc": "utcnow() returns a naive datetime while charged_at is timezone-aware. Comparing or serialising the two raises or silently misorders.",
+      "keywords": [
+        "naive",
+        "utcnow",
+        "offset-naive",
+        "tz-naive",
+        "deprecat",
+        "not timezone-aware",
+        "without a timezone",
+        "no tzinfo"
+      ]
+    },
+    {
+      "id": "retry-double-charge",
+      "line": 90,
+      "symbol": "charge",
+      "desc": "The retry loop has no idempotency key. A gateway that takes the money and then fails to respond gets retried, charging the customer again.",
+      "keywords": [
+        "idempot",
+        "double charge",
+        "double-charge",
+        "charged twice",
+        "charge twice",
+        "duplicate charge",
+        "duplicate payment",
+        "charges the customer again",
+        "charge the customer again",
+        "multiple charges",
+        "pay twice",
+        "paid twice"
+      ]
+    },
+    {
+      "id": "swallowed-exception",
+      "line": 119,
+      "symbol": "persist",
+      "desc": "Bare except with pass discards the storage failure and its cause, so a charged order silently fails to persist with no diagnostic.",
+      "keywords": [
+        "swallow",
+        "silently",
+        "bare except",
+        "broad except",
+        "suppress",
+        "discard",
+        "no logging",
+        "without logging",
+        "hides the",
+        "loses the",
+        "masks the"
+      ]
+    },
+    {
+      "id": "pagination-off-by-one",
+      "line": 131,
+      "symbol": "order_history",
+      "desc": "Off-by-one: slicing to start+page_size-1 returns page_size-1 rows, so one order per page is invisible to the customer.",
+      "keywords": [
+        "off-by-one",
+        "off by one",
+        "one fewer",
+        "one less",
+        "19",
+        "page_size - 1",
+        "misses",
+        "drops",
+        "omits",
+        "excludes",
+        "invisible",
+        "skipped"
+      ]
+    }
+  ]
+}

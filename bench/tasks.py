@@ -141,6 +141,22 @@ def check_prose(artifact, min_bytes):
 # setup helpers
 # ---------------------------------------------------------------------------
 
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+
+
+def seed_fixture(subdir, *names):
+    """Copy fixture files into the run's working directory.
+
+    Only the named files. The grading material (planted.json, test_hidden.py)
+    stays out of the working directory so the agent cannot read the answers.
+    """
+    def _setup(workdir):
+        for n in names:
+            shutil.copy2(os.path.join(FIXTURES, subdir, n), os.path.join(workdir, n))
+        return list(names)
+    return _setup
+
+
 def seed(*names):
     """Copy files from the repo into the run's working directory.
 
@@ -373,7 +389,88 @@ TASKS = [
         ),
         max_turns=35, budget_usd=2.50, timeout_s=540,
     ),
+
+    Task(
+        "bugfind",
+        prompt=(
+            "orders.py in the current directory handles orders and refunds for a "
+            "storefront. It is in production.\n\n"
+            "Review it for defects and write REVIEW.md.\n\n"
+            "For each defect give the function and line number, what goes wrong in "
+            "concrete terms, and the fix. Rank by severity. Report only defects you "
+            "can point at in the code, not general advice. Do not modify orders.py.\n\n"
+            "When you are done, say DONE."
+        ),
+        artifact="REVIEW.md",
+        check=check_prose("REVIEW.md", 500),
+        setup=seed_fixture("bugfind", "orders.py"),
+        kind="prose",
+        rubric=(
+            "A defect review of a Python order and refund module. Score on: are the "
+            "reported defects real and specific to this code rather than generic advice; "
+            "are the line references and described failures accurate; is the severity "
+            "ranking defensible; are the fixes correct; is it concise rather than padded."
+        ),
+        max_turns=30, budget_usd=2.50, timeout_s=480,
+    ),
+
+    Task(
+        "secfind",
+        prompt=(
+            "app.py in the current directory is an internal Flask service that serves "
+            "customer invoices and admin exports. Any authenticated employee can reach "
+            "it.\n\n"
+            "Do a security review and write SECURITY.md.\n\n"
+            "For each finding give the function and line number, the concrete attack it "
+            "enables, a severity, and a specific fix. Rank by severity. Report only "
+            "issues you can point at in the code. Do not modify app.py.\n\n"
+            "When you are done, say DONE."
+        ),
+        artifact="SECURITY.md",
+        check=check_prose("SECURITY.md", 500),
+        setup=seed_fixture("secfind", "app.py"),
+        kind="prose",
+        rubric=(
+            "A security review of a small Flask service. Score on: are the findings real "
+            "and specific to this code rather than OWASP boilerplate; are the line "
+            "references and described attacks accurate; is the severity ranking "
+            "defensible; are the fixes correct and idiomatic; is it concise."
+        ),
+        max_turns=35, budget_usd=2.50, timeout_s=540,
+    ),
+
+    Task(
+        "algo",
+        prompt=(
+            "spec.md in the current directory specifies a function. Implement it in "
+            "schedules.py, exactly to the spec.\n\n"
+            "Read the rules carefully, including the daylight saving ones. Your code "
+            "will be graded by a test suite you cannot see, covering empty input, "
+            "unsorted input, touching intervals, zero-length intervals, invalid "
+            "intervals, and behaviour across both daylight saving transitions.\n\n"
+            "Standard library only. When you are done, say DONE."
+        ),
+        artifact="schedules.py",
+        check=check_prose("schedules.py", 200),
+        setup=seed_fixture("algo", "spec.md"),
+        rubric=(
+            "An implementation of a timezone-aware interval merge, written from a prose "
+            "spec. Score on: correctness against the stated rules, especially comparing "
+            "real elapsed time rather than wall-clock strings and resolving ambiguous "
+            "local times; handling of the edge cases the spec names; clarity; absence of "
+            "unnecessary complexity."
+        ),
+        max_turns=35, budget_usd=2.50, timeout_s=540,
+    ),
 ]
 
 BY_NAME = {t.name: t for t in TASKS}
 PILOT = ["todo", "secreview"]
+
+# Tasks with objective ground truth: defects planted on purpose, or a hidden
+# test suite. Scoring is a count, not a judgement.
+GRADED = ["bugfind", "secfind", "algo"]
+
+# Tasks where a weaker model plausibly fails outright, as opposed to producing
+# something rougher. These are the ones that test whether routing costs quality.
+DISCRIMINATING = ["bugfind", "secfind", "algo"]

@@ -32,13 +32,34 @@ cache state and contend for rate limits.
 | File | Job |
 | --- | --- |
 | `arms.py` | the router configurations under test |
-| `tasks.py` | the six tasks, their caps, their objective checks and judge rubrics |
+| `tasks.py` | the tasks, their caps, their objective checks and judge rubrics |
+| `fixtures/` | subject files with deliberately planted defects, plus the answer keys |
 | `preflight.py` | setup checks that cost nothing, plus one live end-to-end request |
 | `calibrate_prices.py` | solves the real per-model rates from observed tokens |
 | `run_bench.py` | one run = one fresh router process + one `claude -p` |
 | `collect.py` | traces and metrics into `results.json`, plus invariant checks |
 | `judge.py` | blind absolute scoring and order-swapped ranking |
 | `report.py` | `RESULTS.md`, with path scrubbing |
+
+## Task kinds
+
+**Built from scratch** (`todo`, `pelican`, `datasci`, `pacman`): scored by
+driving the result. A browser uses the app, the SVG is opened, the analysis
+scripts are executed.
+
+**Scored against ground truth** (`bugfind`, `secfind`, `algo`): the answer was
+written before the task. `bugfind` and `secfind` plant defects in a subject file
+and count how many the review finds. `algo` grades an implementation against 20
+pytest cases the author never sees. Nothing subjective, and a weaker model can
+fail outright instead of merely producing something rougher. See
+[`fixtures/README.md`](fixtures/README.md).
+
+**Prose** (`docs`, `secreview`): judged only. Useful for reading quality, not for
+measuring whether the work got done.
+
+Note that open-ended tasks are poor cost comparators. On `secreview` both
+routed ladders picked Opus for everything and the cost differences were entirely
+run-to-run variance in how many turns the agent chose to take.
 
 ## Why every arm goes through the router
 
