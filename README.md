@@ -1,72 +1,112 @@
 # claude-code-jev-smart-router
 
-An HTTP proxy for Claude Code that selects the Claude model per request, to
-reduce cost and latency.
+An HTTP proxy for Claude Code. It intercepts `POST /v1/messages`, classifies what
+the request is doing, rewrites the `model` field to a cheaper model when the work
+allows it, and forwards to `api.anthropic.com`. Only that field changes. Response
+streams are relayed unmodified.
 
-## Motivation
+## Results
 
-Claude Code serves a session from one selected model, changing it only at fixed
-points (see [Routing logic](#routing-logic)) rather than according to what each
-request requires. That model handles every request in the agentic loop, including
-the ones that do not need it: file reads, greps, test runs, commit messages.
+**65% cheaper. 36% faster. Every requirement still met.**
 
-Routing those requests to a lower tier has three effects:
+Three tasks, three runs each, Claude Code configured with Opus throughout. The
+proxy served Sonnet instead, and every routed build did the job.
 
-| Effect | Mechanism |
+| | Pinned Opus | Routed | |
+| --- | --- | --- | --- |
+| Cost | $4.39 | **$1.57** | 65% less |
+| Wall clock | 100 s | **64 s** | 36% faster |
+| Builds meeting every requirement | 9/9 | **9/9** | no regression |
+| Quality score | 4.33/5 | 3.67/5 | rougher, still correct |
+
+Per task, medians of three runs:
+
+| | `todo` | `pelican` | `datasci` |
+| --- | --- | --- | --- |
+| Cost, pinned Opus | $0.2662 | $0.3565 | $0.8573 |
+| Cost, routed | $0.1093 | $0.0870 | $0.2427 |
+| **Saving** | **58.9%** | **75.5%** | **71.6%** |
+| Wall clock, pinned Opus | 38.1 s | 90.7 s | 191.7 s |
+| Wall clock, routed | 29.8 s | 23.2 s | 106.8 s |
+| **Speed** | **1.3x** | **3.9x** | **1.8x** |
+| Requirements met, routed | 9/9 | 5/5 | 10/10 |
+| Quality, Opus then routed | 4/5, 4/5 | 4/5, 3/5 | 5/5, 4/5 |
+| Model served | sonnet | sonnet | sonnet |
+
+Classification cost $0.0053 to route $10.87 of work, at a median 266 ms per
+decision. The routing overhead is about one part in two thousand.
+
+### What was asked
+
+| Task | Prompt |
 | --- | --- |
-| Cost | Lower tiers have lower per-token prices, for input and output both. |
-| Latency | Smaller models return sooner. Separately, lower effort reduces the number of agentic turns a step takes. |
-| Usage limits | On a Pro, Max or Team subscription there is no per-token bill. Routing consumes less of the plan's allowance instead. |
+| `todo` | Make a to-do app in a single self-contained HTML file: add, complete, delete, edit, filter by all/active/completed, persist to localStorage, show a remaining count. No dependencies. |
+| `pelican` | Make a single hand-authored SVG of a pelican riding a bicycle. No external images or fonts. |
+| `datasci` | Generate 5000 rows of synthetic retail sales data with seasonality and anomalies, analyse it with pandas, and write up the findings. |
 
-Classification adds one API call per routed request: a fraction of a cent, and
-well under a second of added latency. That is small enough to sit in the request
-path, which is what makes per-request routing possible at all. See
-[The classifier](#the-classifier).
+### How it was measured
 
-### Prompt cache constraint
+Costs come from token counts read by the proxy, which sits in the request path on
+both arms including the pinned-Opus control. Claude Code's own cost figure is not
+used: it attributes usage to the model it requested rather than the one that
+served, so on a routed run it prices Sonnet tokens at Opus rates and reports no
+saving.
 
-Prompt caching limits how often switching is worthwhile. Each model has a
-separate cache, so a mid-conversation switch causes the new model to re-read the
-conversation prefix at full input price. In a long session that prefix accounts
-for most of the token volume, so switching on every request can cost more than
-using a single model throughout.
+**Requirements met** is pass or fail per requirement, decided by driving the
+artifact, not by asking a model. The to-do app is loaded in a headless browser
+and used: type a task, press Enter, tick it off, filter, rename it, reload the
+page, delete it. The SVG is opened and checked for a non-blank drawing. The
+analysis scripts are executed in a clean directory and their output compared
+against the brief.
 
-The proxy prices each switch against the cache rebuild it would cause and applies
-it only when it pays back within a few turns. See
-[Cache management](#cache-management).
+This catches what file inspection does not. One build had an Add button and a
+handler calling `getElementById('taskInput')`, and no text input anywhere in the
+file. It parsed clean and failed on first use.
 
-Savings are unmeasured. Whether routing reduces cost on a given workload depends
-on that workload. See [Measuring cost impact](#measuring-cost-impact).
+**Quality** is a separate blind score, 0 to 5 against a per-task rubric with arm
+labels stripped, plus a ranking pass run twice with the order swapped.
+
+Harness, per-run data and the full matrix including a two-tier ladder that did
+not work: [`bench/`](bench/) and [`bench/RESULTS.md`](bench/RESULTS.md).
 
 ## How it works
 
 It listens on `ANTHROPIC_BASE_URL`, intercepts `POST /v1/messages`, extracts
 facts about the session from the request body, sends those facts to the Jev API
-for classification, maps the response to a model, and forwards the request
-upstream to `api.anthropic.com` with only the `model` field rewritten. Response
-streams are relayed unmodified.
-
-Two modules:
+for classification, maps the response to a model, and forwards upstream with only
+the `model` field rewritten.
 
 | File | Contents | Dependencies |
 | --- | --- | --- |
 | `jev_ontology.py` | Fact extraction, the question set, the tier policy | stdlib only |
 | `jev_router.py` | The proxy, cache cost arithmetic, telemetry, dashboard | fastapi, httpx |
 
+On a Pro, Max or Team subscription there is no per-token bill, so routing
+consumes less of the plan's allowance rather than reducing a charge.
+
+### Prompt cache constraint
+
+Each model has a separate cache, so a mid-conversation switch makes the new model
+re-read the conversation prefix at full input price. In a long session that
+prefix is most of the token volume, so switching on every request can cost more
+than using one model throughout.
+
+The proxy prices each switch against the cache rebuild it causes and applies it
+only when it pays back within a few turns. See
+[Cache management](#cache-management).
+
 ## The classifier
 
-Per-request routing needs a classification step inside the request path. A
-general-purpose model prompted to classify would add seconds and a meaningful
-token bill to every request, which is most of what the routing is trying to save.
+Per-request routing needs classification inside the request path. A
+general-purpose model prompted to classify would add seconds and a token bill to
+every request, which is most of what the routing saves.
 
 Jev is a classification model rather than a generative one, served by TypeSafe at
-`api.typesafe.ai/v1/systemone`. Three properties are what make in-path use
-practical:
+`api.typesafe.ai/v1/systemone`.
 
-**One round trip for the whole question set.** The extracted session facts and
-every question go in a single POST, and every answer comes back together. A user
-turn sends 15 questions; a mid-run recheck sends the 12 that do not depend on a
-new user message:
+**One round trip for the whole question set.** Extracted facts and every question
+go in a single POST. A user turn sends 15 questions; a mid-run recheck sends the
+12 that do not depend on a new user message:
 
 ```http
 POST https://api.typesafe.ai/v1/systemone
@@ -78,10 +118,9 @@ Content-Type: application/json
  "questions": { ... }}
 ```
 
-**Typed answers, not prose to parse.** Each question declares its type and the
-response supplies that type directly. `choice` returns a label from the
-definition set supplied with the question, `score` returns an ordinal, and `noul`
-returns a likelihood between 0 and 1:
+**Typed answers.** Each question declares its type and the response supplies that
+type. `choice` returns a label from the definition set sent with the question,
+`score` returns an ordinal, `noul` returns a likelihood between 0 and 1:
 
 ```json
 {"answers": {
@@ -92,121 +131,17 @@ returns a likelihood between 0 and 1:
  "usage": {"input_tokens": 501}}
 ```
 
-(Abridged. Field names are as the router reads them; the values are
-illustrative.)
+(Abridged. Field names are as the router reads them; values are illustrative.)
 
-**Per-answer confidence, used rather than displayed.** Every answer carries its
-own confidence. The router acts on it: when confidence in `phase` falls below
+**Per-answer confidence.** When confidence in `phase` falls below
 `ROUTER_MIN_CONFIDENCE`, that answer is discarded and the deterministic
-tool-derived phase hint is used instead. The demand adjustments are gated the
-same way. An uncertain classifier degrades to the facts rather than guessing.
+tool-derived phase hint is used instead. Demand adjustments are gated the same
+way. The decision is split into many small questions because the model is
+calibrated per individual judgment; the weighing happens afterwards in
+`pick_tier_v2`.
 
-This is also why the ontology asks many small questions instead of one "which
-model should serve this request". The model is calibrated per individual
-judgment, so decomposing the decision keeps each answer meaningful, and the
-weighing happens afterwards in `pick_tier_v2`, in code that can be read and
-changed.
-
-Failure is not fatal. The call has a timeout, and any error, timeout or
-non-200 response returns no answers, at which point the session keeps its current
-tier or the request forwards as received.
-
-## Measured runs
-
-Two consecutive tasks, Claude Code configured with Opus in both. Opus served
-neither.
-
-### Run 1: write the app
-
-Prompt: `make a to do app in single html`. Five requests, 31 seconds wall clock.
-
-| # | Model | Decision |
-| --- | --- | --- |
-| 1 | haiku | utility call (`max_tokens=1`), pinned, session state untouched |
-| 2 | sonnet | plan phase, canonical build, capped (0.94), first turn |
-| 3 | sonnet | plan phase, canonical build, capped (0.93), unchanged |
-| 4 | haiku | utility call (`max_tokens=64`), pinned, session state untouched |
-| 5 | sonnet | agentic continuation, held (no event, no classify) |
-
-Three documented behaviours are visible:
-
-- **The canonical cap.** A to-do app in one HTML file is a canonical artifact, so
-  the tier was capped one rung below the top. That is why Opus never ran, and the
-  cap plus its confidence appear in the reason string.
-- **The utility pin.** Two of the five were sidecar calls filtered by
-  `max_tokens` and kept out of session state.
-- **The continuation hold.** One tool-result turn was held without a classifier
-  call because no recheck trigger fired.
-
-Two of five requests reached the classifier.
-
-### Run 2: document the app
-
-Prompt: `create documentation for @todo.html`. Eight requests, 57 seconds wall
-clock.
-
-| # | Model | Decision |
-| --- | --- | --- |
-| 1 | haiku | explore phase, effort medium, first turn |
-| 2 | haiku | explore phase, effort medium, unchanged |
-| 3 | haiku | explore phase, effort medium, unchanged |
-| 4 | sonnet | explore phase, user asked for extended thinking, effort medium, **upgraded** |
-| 5 | sonnet | agentic continuation, held (no event, no classify) |
-| 6 | sonnet | agentic continuation, held (no event, no classify) |
-| 7 | sonnet | agentic continuation, held (no event, no classify) |
-| 8 | sonnet | agentic continuation, held (no event, no classify) |
-
-![The router dashboard after run 2](docs/img/dashboard-run2.png)
-
-This run exercises different rules than the first:
-
-- **Explore starts cheap.** The `explore` phase has the lowest default tier, so
-  reading the file and looking around the directory ran on Haiku.
-- **An upgrade fired mid-run.** The request carried a raised thinking budget,
-  which floors the tier at the middle rung (`jev_ontology.py:814`, the source of
-  that reason string). Upgrades are applied immediately without pricing the cache
-  rebuild, which is the documented asymmetry: no token arithmetic justifies
-  under-serving a request that asked for more thinking.
-- **Four consecutive holds.** Once writing began, four tool-result turns ran at
-  93% to 98% cached with no classifier call between them. The continuation hold
-  and the warm cache are both doing their job here.
-- **Effort steering was on**, visible as `effort medium` in the reason strings.
-  That lowers effort on the current model rather than switching models, so the
-  cache survives.
-
-Four of eight requests reached the classifier.
-
-### Side by side
-
-| | Run 1 | Run 2 | Both |
-| --- | --- | --- | --- |
-| Wall clock | 31 s | 57 s | 88 s |
-| Requests | 5 | 8 | 13 |
-| Requests classified | 2 | 4 | 6 |
-| Input served from cache | 40% | 93% | |
-| Spent through the router | $0.4299 | $0.3148 | **$0.7448** |
-| Same tokens pinned to Opus | $0.8533 | $0.5279 | **$1.3812** |
-| Difference | $0.4234 (49.6%) | $0.2131 (40.4%) | **$0.6365 (46.1%)** |
-| Classifier spend | $0.0001 | $0.0003 | $0.0004 |
-| Classifier latency, median | 294 ms | 243 ms | |
-
-Figures recomputed from the router's own trace records rather than read off the
-dashboard, which rounds. Opus was configured for both runs and served neither.
-Classification cost $0.0004 to route $0.7448 of work.
-
-### How to read these
-
-The percentages are upper bounds, which is how the dashboard labels them. They
-price the same token counts at Opus rates, and a model that needed more turns
-would not have produced the same token counts.
-
-The two runs differ, and the sample is far too small to explain why. Run 2 sent a
-larger share of its completed requests to the middle tier, which narrows the gap
-to an all-Opus baseline. That is arithmetic, not a finding.
-
-Two tasks in two sessions is not a benchmark. It is a demonstration that the
-machinery runs, that the documented rules fire, and that classification costs
-roughly a thousandth of what the work costs.
+Any error, timeout or non-200 returns no answers, at which point the session
+keeps its current tier or the request forwards as received.
 
 ## Status
 
@@ -214,12 +149,13 @@ Proof of concept. Specifically:
 
 - Requires a TypeSafe API key. Without one, every request forwards unrouted.
 - The thresholds in the tier policy are unfitted defaults, not measured values.
-- Savings are not benchmarked. Two measured runs are in
-  [Measured runs](#measured-runs). On other workloads prompt caching can make
-  per-request routing more expensive than a single pinned model. Measure before
-  relying on it.
-- The default prices in `ROUTER_PRICES` are list prices recorded at the time of
-  writing. Verify them before trusting the breakeven arithmetic.
+- Benchmarked on three tasks, 27 runs, one machine. On other workloads prompt
+  caching can make per-request routing cost more than a single pinned model.
+  Run [`bench/`](bench/) on your own tasks before relying on the numbers.
+- The default prices in `ROUTER_PRICES` were verified by solving each rate from
+  observed token counts against billed cost. Re-verify when pricing changes:
+  the breakeven arithmetic depends on them, and a stale table changes which
+  model gets picked, not just what the dashboard reports.
 
 ## Routing logic
 
@@ -240,9 +176,9 @@ This proxy classifies each request along two dimensions:
    code such as authentication or migrations (`risk_surface`), and whether the
    next step acts outside the working tree (`irreversible`).
 
-The source states the intent as `tier = cognitive demand x cost of an undetected
-error` (`jev_ontology.py:28`). In practice it is a sequence of conditionals in
-`pick_tier_v2`, documented in [docs/ONTOLOGY.md](docs/ONTOLOGY.md).
+Both dimensions are combined by a sequence of conditionals in `pick_tier_v2`,
+with every threshold a hardcoded default. Each branch and value is listed in
+[docs/ONTOLOGY.md](docs/ONTOLOGY.md).
 
 Resulting tiers for `phase = implement`:
 
@@ -270,7 +206,7 @@ Three cases:
 
 | Cache state | Behavior |
 | --- | --- |
-| Cold (no request within `ROUTER_CACHE_TTL_SAFE`, default 240s) | Switch. Nothing to lose. |
+| Cold (no request within `ROUTER_CACHE_TTL_SAFE`, default 2880s) | Switch. There is no warm prefix to rebuild. |
 | Warm, downgrade requested | Switch only if `per_turn * ROUTER_SWITCH_HORIZON > one_time` |
 | Warm, upgrade requested | Switch immediately, without pricing |
 
@@ -278,8 +214,8 @@ Input token prices are read from the relayed response stream
 (`input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`), not
 estimated. Prices per model come from `ROUTER_PRICES`.
 
-Note that a tier is a price per token, not a cost per task. A cheaper model that
-emits more tokens or takes more turns can cost more per completed task, so
+A tier is a price per token, not a cost per task. A cheaper model that emits
+more tokens or takes more turns can cost more per completed task, so
 `switch_delta` prices each side using that model's observed output volume. If the
 cheaper model's measured output rate is high enough, the saving is negative and
 no switch occurs.
@@ -407,8 +343,10 @@ Configuration reference for all 28 environment variables, and how to keep
 
 ![The router dashboard after the example run](docs/img/dashboard.png)
 
-The spend comparison on that page is an upper bound. It prices the weaker model's
-additional turns at the highest tier. Trace data gives an accurate figure.
+The spend comparison on that page is an upper bound. It reprices the proxy's own
+token counts at the highest tier, so extra turns taken by a weaker model are
+billed into the comparison at top-tier rates. For an accurate figure, run the
+same task pinned and routed with [`bench/`](bench/).
 
 ## Limitations
 
@@ -442,8 +380,27 @@ the cache interaction and is more current than these documents.
 
 ## Measuring cost impact
 
-Run one week with a pinned model, one week routed, and compare `/cost`. On a
-subscription, compare how often the plan reaches its usage limits instead.
+Do not use Claude Code's own `/cost`. It attributes usage to the model it
+requested, not the one the router served, so on a routed session it prices
+Sonnet and Haiku tokens at Opus rates and reports no saving at all.
+
+Use the harness in [`bench/`](bench/). It runs a task pinned to Opus and routed,
+counts both through the router, drives the resulting artifact to check the work
+was actually done, and writes a report:
+
+```bash
+export TYPESAFE_API_KEY=...
+python3 bench/preflight.py --live     # setup checks, costs under a cent
+python3 bench/calibrate_prices.py     # solve the real per-model rates
+python3 bench/run_bench.py --pilot    # 2 tasks, both arms
+python3 bench/collect.py <stamp>      # costs, from router token counts
+python3 bench/fr_check.py <stamp>     # did it meet the requirements
+python3 bench/judge.py <stamp>        # blind quality scoring
+python3 bench/report.py <stamp>       # writes bench/RESULTS.md
+```
+
+Add your own tasks in `bench/tasks.py`. Three tasks on one machine is not a
+general claim, and neither is anything measured on somebody else's workload.
 
 ## License
 
