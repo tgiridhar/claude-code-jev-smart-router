@@ -243,10 +243,10 @@ additional turns at the highest tier. Trace data gives an accurate figure.
 `ROUTING NOTES` at the end of `jev_router.py` contains the author's commentary on
 the cache interaction and is more current than these documents.
 
-## Measuring it
+## Measuring cost impact
 
 Run one week with a pinned model, one week routed, and compare `/cost`. On a
-subscription, compare how often you hit usage limits instead.
+subscription, compare how often the plan reaches its usage limits instead.
 
 ## License
 

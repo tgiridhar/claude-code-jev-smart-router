@@ -39,15 +39,15 @@ claude
 
 Do **not** set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, and do not run
 `/logout`. Setting `ANTHROPIC_BASE_URL` on its own does not replace the
-subscription: requests route through the proxy while your saved claude.ai login
-stays the active credential, so your plan's limits and billing apply. Setting a
-gateway credential variable is what replaces the subscription, and then traffic
-bills per token to whoever owns that credential.
+subscription: requests route through the proxy while the saved claude.ai login
+remains the active credential, so the plan's limits and billing apply. Setting a
+gateway credential variable replaces the subscription, after which traffic bills
+per token to the owner of that credential.
 
 Two differences on this path:
 
 - Routing conserves usage limit rather than reducing a billed amount. Measure it
-  by how often you reach limits, not with `/cost`.
+  by how often the plan reaches its limits, not with `/cost`.
 - Claude Code stops validating plan requirements behind a gateway. It will send a
   model the plan does not serve and the upstream will reject it. List only models
   the plan serves in `ROUTER_TIERS`.
@@ -56,7 +56,7 @@ The proxy forwards the OAuth bearer and `anthropic-beta` unmodified. On
 subscription requests that header carries an OAuth capability; removing it returns
 401.
 
-### With an API key
+### API key
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # used only if the client sends no credential
@@ -131,7 +131,7 @@ copyable form.
 | `ROUTER_ENABLED` | `1` | `0` starts in passthrough. Also flippable at runtime. |
 | `ROUTER_SENTINEL` | `""` | Only route requests naming this model. Empty routes everything. |
 | `ROUTER_RECHECK_EVERY` | `6` | Fallback recheck cadence in turns. `0` disables it; events still fire. |
-| `ROUTER_RISK_SURFACE` | a long regex | What counts as a risk surface. Override for your repo. |
+| `ROUTER_RISK_SURFACE` | see ONTOLOGY.md | Regex defining a risk surface. Override per repository. |
 | `ROUTER_CLASSIFY_TIMEOUT` | `2.0` | Seconds before a Jev call is abandoned and the turn forwards unrouted |
 | `ROUTER_UPSTREAM` | `https://api.anthropic.com` | Where requests go |
 
@@ -210,8 +210,8 @@ turns at the highest tier. Use trace data for an accurate figure.
 
 ## Tracing and calibration
 
-The thresholds in `pick_tier_v2` are defaults. Trace data lets you replace them
-with values measured on your own repository.
+The thresholds in `pick_tier_v2` are defaults. Trace data allows replacing them
+with values measured on a specific repository.
 
 ```bash
 export ROUTER_TRACE_DIR=~/jev-traces    # NOT inside this repo
@@ -239,7 +239,7 @@ output-rate ratio in `/router/metrics` is confounded, since tiers receive
 different work, which is why it is clamped to `[0.5, 3.0]` and applied as a
 correction.
 
-## Modifying it
+## Modification points
 
 **Change a routing decision.** Edit the relevant conditional in `pick_tier_v2`
 (`jev_ontology.py`). The policy is a sequence of `if` statements rather than a
@@ -251,7 +251,7 @@ calibrated per individual judgment.
 `FAIL_TEXT` and `PASS_TEXT` are at the top of `jev_ontology.py`. Names change
 between Claude Code releases: `Task` versus `Agent`, `TodoWrite` versus
 `TaskCreate`, and current macOS and Linux builds omit `Grep` and `Glob`. Compare
-against your traces after upgrading.
+against recorded traces after upgrading.
 
 **Add or remove a tier.** Add the model to `ROUTER_TIERS` and give it an entry in
 `ROUTER_PRICES`. A two-tier ladder is valid if trace data shows the middle tier
@@ -273,11 +273,11 @@ costs more per completed task than the highest one.
 | Symptom | Cause |
 | --- | --- |
 | Every request fails 401 on a subscription | `anthropic-beta` was stripped somewhere. It carries an OAuth capability. The proxy forwards it verbatim; check anything else in the path. |
-| Upstream rejects the chosen model | Your plan does not serve it. Behind a gateway Claude Code stops checking, so trim `ROUTER_TIERS`. |
+| Upstream rejects the chosen model | The plan does not serve that model. Claude Code does not validate this behind a gateway. Remove it from `ROUTER_TIERS`. |
 | Nothing is ever routed | No `TYPESAFE_API_KEY`, or `ROUTER_SENTINEL` is set and the request's model does not match it. Check `/router/status` and the `jev` block in `/router/metrics`. |
-| Models switch constantly | You are on the no-telemetry fallback path. Confirm usage is being observed in `/router/metrics`; if it is, read the arithmetic in the decision feed. If it is not, widen `ROUTER_DOWNGRADE_PATIENCE`. |
+| Models switch constantly | The no-telemetry fallback path is active. Check whether usage counters appear in `/router/metrics`. If they do, read the arithmetic in the decision log. If they do not, increase `ROUTER_DOWNGRADE_PATIENCE`. |
 | Effort steering stopped working mid-session | A 400 rejected an effort marker, so it disabled itself process-wide and retried plain. Check the log, and check `ROUTER_EFFORT_CAPABLE` against models that actually support it. |
-| Costs went **up** | The expected failure mode. Read [ARCHITECTURE.md](ARCHITECTURE.md#why-the-cache-is-the-whole-economics). Verify `ROUTER_PRICES` against current list prices first, since the whole breakeven depends on them. |
+| Costs increased | A known failure mode. See [ARCHITECTURE.md](ARCHITECTURE.md#cache-cost-arithmetic). Check `ROUTER_PRICES` against current list prices first; the breakeven calculation depends on them. |
 | `/context` shows the wrong model | Known gap. `count_tokens` is forwarded without rewriting its model field. |
 | `JSONDecodeError` at startup | Malformed JSON in one of the five JSON-valued env vars. |
 
@@ -300,10 +300,10 @@ does not support routing Claude Code to non-Claude models through any gateway.
 None of these require an API key.
 
 ```bash
-# the ontology's deterministic half, end to end
+# ontology module, no API key required
 python3 jev_ontology.py
 
-# the proxy boots with no configuration at all
+# proxy startup with no configuration
 python3 -m uvicorn jev_router:app --port 8787
 
 curl -s localhost:8787/router/status
