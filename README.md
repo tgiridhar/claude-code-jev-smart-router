@@ -178,17 +178,21 @@ Four of eight requests reached the classifier.
 
 ### Side by side
 
-| | Run 1 | Run 2 |
-| --- | --- | --- |
-| Wall clock | 31 s | 57 s |
-| Requests | 5 | 8 |
-| Requests classified | 2 | 4 |
-| Input served from cache | 40% | 93% |
-| Spent through the router | $0.4299 | $0.3148 |
-| Same tokens pinned to Opus | $0.8533 | $0.5279 |
-| Difference | $0.4233 (50%) | $0.2128 (40%) |
-| Classifier spend | $0.0001 | $0.0003 |
-| Classifier latency, median | 294 ms | 243 ms |
+| | Run 1 | Run 2 | Both |
+| --- | --- | --- | --- |
+| Wall clock | 31 s | 57 s | 88 s |
+| Requests | 5 | 8 | 13 |
+| Requests classified | 2 | 4 | 6 |
+| Input served from cache | 40% | 93% | |
+| Spent through the router | $0.4299 | $0.3148 | **$0.7448** |
+| Same tokens pinned to Opus | $0.8533 | $0.5279 | **$1.3812** |
+| Difference | $0.4234 (49.6%) | $0.2131 (40.4%) | **$0.6365 (46.1%)** |
+| Classifier spend | $0.0001 | $0.0003 | $0.0004 |
+| Classifier latency, median | 294 ms | 243 ms | |
+
+Figures recomputed from the router's own trace records rather than read off the
+dashboard, which rounds. Opus was configured for both runs and served neither.
+Classification cost $0.0004 to route $0.7448 of work.
 
 ### How to read these
 
