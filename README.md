@@ -5,6 +5,61 @@ the request is doing, rewrites the `model` field to a cheaper model when the wor
 allows it, and forwards to `api.anthropic.com`. Only that field changes. Response
 streams are relayed unmodified.
 
+## Installation
+
+```bash
+pip install -r requirements.txt
+
+export TYPESAFE_API_KEY=...        # console.typesafe.ai/settings/keys
+uvicorn jev_router:app --port 8787
+```
+
+Run a single worker. Session state is in-process, so `--workers N` routes
+same-session requests to processes with different state.
+
+Bind to loopback. The `/router/*` control endpoints have no authentication.
+
+## Connecting Claude Code
+
+### Subscription (Pro, Max, Team)
+
+```bash
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+claude
+```
+
+Do not set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` on this path, and do not
+run `/logout`. Setting `ANTHROPIC_BASE_URL` alone does not replace the
+subscription: requests route through the proxy while the saved claude.ai login
+remains the active credential. Setting a gateway credential replaces the
+subscription, and traffic then bills per token to the owner of that credential.
+
+On a subscription, routing conserves usage limit rather than reducing a bill.
+Claude Code also stops validating plan requirements behind a gateway, so
+`ROUTER_TIERS` must list only models the plan serves.
+
+### API key
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # used only if the client sends no credential
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+claude
+```
+
+To persist, add to `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8787"
+  }
+}
+```
+
+Configuration reference for all 28 environment variables, and how to keep
+`/model` working as a manual override, is in
+[docs/DEVELOPER.md](docs/DEVELOPER.md).
+
 ## Results
 
 **Met every requirement. 72% cheaper. 2.1x faster.**
@@ -267,61 +322,6 @@ Passed through unmodified: the client credential, `cache_control` markers, the
 the `?beta=true` query parameter. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full compliance list and the
 known gaps.
-
-## Installation
-
-```bash
-pip install -r requirements.txt
-
-export TYPESAFE_API_KEY=...        # console.typesafe.ai/settings/keys
-uvicorn jev_router:app --port 8787
-```
-
-Run a single worker. Session state is in-process, so `--workers N` routes
-same-session requests to processes with different state.
-
-Bind to loopback. The `/router/*` control endpoints have no authentication.
-
-## Connecting Claude Code
-
-### Subscription (Pro, Max, Team)
-
-```bash
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
-claude
-```
-
-Do not set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` on this path, and do not
-run `/logout`. Setting `ANTHROPIC_BASE_URL` alone does not replace the
-subscription: requests route through the proxy while the saved claude.ai login
-remains the active credential. Setting a gateway credential replaces the
-subscription, and traffic then bills per token to the owner of that credential.
-
-On a subscription, routing conserves usage limit rather than reducing a bill.
-Claude Code also stops validating plan requirements behind a gateway, so
-`ROUTER_TIERS` must list only models the plan serves.
-
-### API key
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...   # used only if the client sends no credential
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
-claude
-```
-
-To persist, add to `~/.claude/settings.json`:
-
-```json
-{
-  "env": {
-    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8787"
-  }
-}
-```
-
-Configuration reference for all 28 environment variables, and how to keep
-`/model` working as a manual override, is in
-[docs/DEVELOPER.md](docs/DEVELOPER.md).
 
 ## Dashboard
 
