@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import re
+import statistics
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -49,7 +50,15 @@ def main():
     runs = results["runs"]
     tasks_seen = sorted({r["task"] for r in runs}, key=lambda n: [t.name for t in tasks_mod.TASKS].index(n))
     arms_seen = [a_ for a_ in [x.name for x in arms_mod.ARMS] if any(r["arm"] == a_ for r in runs)]
-    by = {(r["task"], r["arm"]): r for r in runs}
+    # Group all reps of a cell. Taking the last rep would report whichever run
+    # happened to finish last as though it were the result.
+    cells = {}
+    for r in runs:
+        cells.setdefault((r["task"], r["arm"]), []).append(r)
+
+    def med(key, tn, an, default=None):
+        vals = [c[key] for c in cells.get((tn, an), []) if c.get(key) is not None]
+        return statistics.median(vals) if vals else default
 
     L = []
     w = L.append
@@ -131,32 +140,47 @@ def main():
             w(line)
         w("```\n")
         w(f"Caps: {task.max_turns} turns, ${task.budget_usd:.2f} budget, {task.timeout_s}s wall clock.\n")
-        w("| Arm | Requirements met | Wall | Cost | Perceived Opus | Measured Opus | Perceived saving | Measured saving | Quality |")
-        w("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
         j = jby.get(tn, {})
         absol = j.get("absolute", {})
+        has_j = bool(absol)
+        nreps = max(len(v) for k, v in cells.items() if k[0] == tn)
+        w(f"Median of {nreps} run{'s' if nreps > 1 else ''} per arm."
+          + (" Perfect means every requirement met on every run." if nreps > 1 else "") + "\n")
+        hdr = ["Arm", "Score", "Perfect runs", "Wall", "Cost", "Measured Opus", "Saving"]
+        if has_j:
+            hdr.append("Quality")
+        w("| " + " | ".join(hdr) + " |")
+        w("| " + " | ".join("---" for _ in hdr) + " |")
         for an in arms_seen:
-            r = by.get((tn, an))
-            if not r:
+            group = cells.get((tn, an))
+            if not group:
                 continue
-            sc = absol.get(an, {})
-            jt = f"{sc['overall']}/5" if sc else "-"
-            frs = (f"{r['fr_met']}/{r['fr_total']}" if r.get("fr_total") else "-")
-            if r.get("fr_total") and r["fr_met"] != r["fr_total"]:
+            tot = group[0].get("fr_total")
+            sc = med("fr_met", tn, an)
+            frs = f"{sc:.0f}/{tot}" if tot else "-"
+            perfect = sum(1 for c in group if c.get("fr_total") and c["fr_met"] == c["fr_total"])
+            if tot and perfect < len(group):
                 frs = f"**{frs}**"
-            w(f"| `{an}` | {frs} | {r['wall_s']:.0f}s | "
-              f"{usd(r['actual'] + r['jev_cost'])} | {usd(r['perceived_opus'])} | "
-              f"{usd(r['measured_opus'])} | {pct(r['perceived_saving_pct'])} | "
-              f"{pct(r['measured_saving_pct'])} | {jt} |")
+            row = [f"`{an}`", frs, f"{perfect}/{len(group)}",
+                   f"{med('wall_s', tn, an, 0):.0f}s",
+                   usd(med("actual", tn, an, 0) + med("jev_cost", tn, an, 0)),
+                   usd(med("measured_opus", tn, an)),
+                   pct(med("measured_saving_pct", tn, an))]
+            if has_j:
+                q = absol.get(an, {})
+                row.append(f"{q['overall']}/5" if q else "-")
+            w("| " + " | ".join(row) + " |")
         w("")
-        mixes = [(an, by[(tn, an)]["model_mix"]) for an in arms_seen
-                 if (tn, an) in by and not an.startswith("control")]
-        if mixes:
-            w("Model mix on the routed arms:\n")
-            for an, mix in mixes:
-                parts = [f"{m.replace('claude-', '').rsplit('-20', 1)[0]} x{v['calls']}"
-                         for m, v in sorted(mix.items())]
-                w(f"- `{an}`: {', '.join(parts)}")
+        routed = [an for an in arms_seen if not an.startswith("control") and (tn, an) in cells]
+        if routed:
+            w("Models the router served, summed over all runs of the cell:\n")
+            for an in routed:
+                agg = {}
+                for c in cells[(tn, an)]:
+                    for m, v in c["model_mix"].items():
+                        k = m.replace("claude-", "").rsplit("-20", 1)[0]
+                        agg[k] = agg.get(k, 0) + v["calls"]
+                w(f"- `{an}`: " + ", ".join(f"{k} x{v}" for k, v in sorted(agg.items())))
             w("")
         if j.get("rankings"):
             for rk in j["rankings"]:

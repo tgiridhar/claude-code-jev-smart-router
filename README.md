@@ -7,39 +7,70 @@ streams are relayed unmodified.
 
 ## Results
 
-**65% cheaper. 36% faster. Every requirement still met.**
+**74% cheaper. 2.4x faster. Matched Opus on every task.**
 
-Three tasks, three runs each, Claude Code configured with Opus throughout. The
-proxy served Sonnet instead, and every routed build did the job.
+63 runs across two matrices. The first set of tasks has a right answer, which
+makes it the stronger evidence.
 
-| | Pinned Opus | Routed | |
+### Tasks with a right answer
+
+Defects planted in the subject file on purpose, or a hidden test suite. Scoring
+is a count against ground truth written before the task ran, so no model grades
+anything. Median of three runs per cell.
+
+| Task | Pinned Opus | Pinned Haiku | Router |
 | --- | --- | --- | --- |
-| Cost | $4.39 | **$1.57** | 65% less |
-| Wall clock | 100 s | **64 s** | 36% faster |
-| Builds meeting every requirement | 9/9 | **9/9** | no regression |
-| Quality score | 4.33/5 | 3.67/5 | rougher, still correct |
+| `bugfind` find 6 planted defects in an order and refund module | 6/6 | **4/6** | **6/6** |
+| `secfind` find 6 planted vulnerabilities in a Flask service | 6/6 | **5/6** | **6/6** |
+| `algo` implement a prose spec, graded by 20 hidden tests | 20/20 | 20/20 | 20/20 |
 
-Per task, medians of three runs:
+| | Pinned Opus | Pinned Haiku | Router |
+| --- | --- | --- | --- |
+| Cost, 9 runs | $4.50 | $0.63 | **$1.15** |
+| Against Opus | | 86% less | **74% less** |
+| Mean wall clock | 97 s | 41 s | **40 s** |
+| Runs meeting every requirement | 9/9 | **3/9** | **7/9** |
+
+Haiku on its own is 86% cheaper and does not hold up: 3 of 9 runs met every
+requirement, it never scored above 4 of 6 on `bugfind`, and it missed the retry
+double-charge defect in all three attempts. That is what the cheap tier costs
+you, and it is the figure a quality score could not produce.
+
+The router matched Opus on the median score of all three tasks for a quarter of
+the money. It is not risk free either: 7 of 9 runs were perfect, not 9. One
+`bugfind` run scored 4/6 and one `algo` run 19/20.
+
+`algo` did not discriminate. All three arms scored 20/20, so a tight written spec
+appears to carry a weak model through edge cases it would otherwise miss. It is
+useful as a regression check rather than as a comparator.
+
+### Tasks built from scratch
+
+Scored by driving the result: a browser uses the app, the SVG is opened, the
+analysis scripts are executed. Median of three runs.
 
 | | `todo` | `pelican` | `datasci` |
 | --- | --- | --- | --- |
+| Requirements met, routed | 9/9 | 5/5 | 10/10 |
+| Requirements met, pinned Opus | 9/9 | 5/5 | 10/10 |
 | Cost, pinned Opus | $0.2662 | $0.3565 | $0.8573 |
 | Cost, routed | $0.1093 | $0.0870 | $0.2427 |
 | **Saving** | **58.9%** | **75.5%** | **71.6%** |
 | Wall clock, pinned Opus | 38.1 s | 90.7 s | 191.7 s |
 | Wall clock, routed | 29.8 s | 23.2 s | 106.8 s |
-| **Speed** | **1.3x** | **3.9x** | **1.8x** |
-| Requirements met, routed | 9/9 | 5/5 | 10/10 |
-| Quality, Opus then routed | 4/5, 4/5 | 4/5, 3/5 | 5/5, 4/5 |
-| Model served | sonnet | sonnet | sonnet |
+| Quality score, Opus then routed | 4/5, 4/5 | 4/5, 3/5 | 5/5, 4/5 |
 
-Classification cost $0.0053 to route $10.87 of work, at a median 266 ms per
-decision. The routing overhead is about one part in two thousand.
+Across the whole benchmark, classification cost **$0.0087 to route $21.77** of
+work, at a median 266 ms per decision. Routing overhead is about one part in two
+thousand.
 
 ### What was asked
 
 | Task | Prompt |
 | --- | --- |
+| `bugfind` | Review orders.py, a production order and refund module, and write up every defect with its line and a fix. |
+| `secfind` | Security review of an internal Flask invoice service reachable by any employee. Report each finding with its line, the attack, and a fix. |
+| `algo` | Implement `merge_schedules(intervals, tz)` from spec.md, merging intervals that overlap or touch, comparing real elapsed time across both daylight saving transitions. Standard library only. |
 | `todo` | Make a to-do app in a single self-contained HTML file: add, complete, delete, edit, filter by all/active/completed, persist to localStorage, show a remaining count. No dependencies. |
 | `pelican` | Make a single hand-authored SVG of a pelican riding a bicycle. No external images or fonts. |
 | `datasci` | Generate 5000 rows of synthetic retail sales data with seasonality and anomalies, analyse it with pandas, and write up the findings. |
@@ -47,27 +78,33 @@ decision. The routing overhead is about one part in two thousand.
 ### How it was measured
 
 Costs come from token counts read by the proxy, which sits in the request path on
-both arms including the pinned-Opus control. Claude Code's own cost figure is not
+every arm including the pinned controls. Claude Code's own cost figure is not
 used: it attributes usage to the model it requested rather than the one that
 served, so on a routed run it prices Sonnet tokens at Opus rates and reports no
-saving.
+saving at all.
 
-**Requirements met** is pass or fail per requirement, decided by driving the
-artifact, not by asking a model. The to-do app is loaded in a headless browser
-and used: type a task, press Enter, tick it off, filter, rename it, reload the
-page, delete it. The SVG is opened and checked for a non-blank drawing. The
-analysis scripts are executed in a clean directory and their output compared
-against the brief.
+**Scoring is pass or fail per requirement, and no model decides it.**
+
+For the planted tasks the answer key is written before the task runs and is never
+copied into the working directory. A defect counts as found only when the review
+names the relevant symbol and a phrase specific to that defect class in the same
+passage; a review listing every function and no defect scores zero. `algo` is
+graded by running the hidden suite, and a reference solution passes all 20.
+
+For the built tasks the artifact is driven rather than inspected. The to-do app
+is loaded in a headless browser and used: type a task, press Enter, tick it off,
+filter, rename it, reload the page, delete it.
 
 This catches what file inspection does not. One build had an Add button and a
 handler calling `getElementById('taskInput')`, and no text input anywhere in the
 file. It parsed clean and failed on first use.
 
-**Quality** is a separate blind score, 0 to 5 against a per-task rubric with arm
-labels stripped, plus a ranking pass run twice with the order swapped.
+**Quality score**, where shown, is a separate blind judgement against a per-task
+rubric with arm labels stripped and a ranking pass run twice with the order
+swapped. On the planted tasks it is redundant, because the count is the answer.
 
-Harness, per-run data and the full matrix including a two-tier ladder that did
-not work: [`bench/`](bench/) and [`bench/RESULTS.md`](bench/RESULTS.md).
+Harness, fixtures and per-run data: [`bench/`](bench/) and
+[`bench/RESULTS.md`](bench/RESULTS.md).
 
 ## How it works
 
@@ -149,9 +186,13 @@ Proof of concept. Specifically:
 
 - Requires a TypeSafe API key. Without one, every request forwards unrouted.
 - The thresholds in the tier policy are unfitted defaults, not measured values.
-- Benchmarked on three tasks, 27 runs, one machine. On other workloads prompt
+- Benchmarked on six tasks, 63 runs, one machine. On other workloads prompt
   caching can make per-request routing cost more than a single pinned model.
   Run [`bench/`](bench/) on your own tasks before relying on the numbers.
+- The `risk_surface` floor did not engage on the security review task. It is
+  gated on the phase being `implement`, `debug`, `review` or `plan`
+  (`jev_ontology.py:772`), and a review session opens in `explore`, so the floor
+  is skipped even with the risk signal at 0.75 and no check running.
 - The default prices in `ROUTER_PRICES` were verified by solving each rate from
   observed token counts against billed cost. Re-verify when pricing changes:
   the breakeven arithmetic depends on them, and a stale table changes which
