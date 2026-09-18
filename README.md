@@ -1,14 +1,27 @@
 # claude-code-jev-smart-router
 
-An HTTP proxy for Claude Code. It intercepts `POST /v1/messages`, works out what
-the request is actually doing, rewrites the `model` field to a cheaper model when
-the work allows it, and forwards to `api.anthropic.com`. Only that field changes.
-Response streams are relayed unmodified.
+Claude Code picks one model when a session starts and uses it for everything.
+Configure Opus and Opus reads your files, runs your greps, writes your commit
+messages, and does the one genuinely hard step that needed it. You pay top-tier
+prices for all of it.
+
+Configuring a cheap model instead is worse. A security review or a subtle bug
+hunt is exactly where a weaker model quietly misses something, and you find out
+later.
+
+Neither choice is right for a whole session, because a session is not one kind of
+work. Listing a directory and hunting a race condition are different jobs and
+want different models.
+
+This proxy decides per request. It intercepts `POST /v1/messages`, works out what
+the request is actually doing, rewrites the `model` field when the work allows
+it, and forwards to `api.anthropic.com`. Only that field changes. Response
+streams are relayed unmodified.
 
 **Over 63 measured runs on six tasks it met every requirement Opus met, for 72%
 less money and in under half the time.** Finding planted bugs, finding planted
-vulnerabilities, passing a hidden test suite, building apps that a browser then
-drove and used. [Results](#results).
+vulnerabilities, passing a hidden test suite, and building apps that a browser
+then drove and used. [Results](#results).
 
 ## What Jev is
 
