@@ -1,0 +1,4 @@
+# jev_ontology.py is pure stdlib. Everything here is for the proxy.
+fastapi>=0.110
+uvicorn>=0.27
+httpx>=0.27

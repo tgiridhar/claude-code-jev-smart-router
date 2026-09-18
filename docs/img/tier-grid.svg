@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="440" viewBox="0 0 800 440" role="img" aria-label="Grid of cognitive demand against the cost of an undetected error, showing the model tier each combination selects">
+  <rect x="0" y="0" width="800" height="440" fill="#ffffff"/>
+  <text x="20" y="30" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#111827">tier = cognitive demand &#215; cost of an undetected error</text>
+  <text x="20" y="52" font-family="Helvetica, Arial, sans-serif" font-size="12.5" fill="#6b7280">Cells show the tier for phase = implement. A cheap model is safe when a check catches its mistakes, dangerous when nothing does.</text>
+
+  <text x="345" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#374151" text-anchor="middle">Rote</text>
+  <text x="515" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#374151" text-anchor="middle">Routine</text>
+  <text x="685" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#374151" text-anchor="middle">Hard</text>
+  <text x="345" y="103" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#9ca3af" text-anchor="middle">demand &lt; 0.6</text>
+  <text x="515" y="103" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#9ca3af" text-anchor="middle">0.6 to 1.4</text>
+  <text x="685" y="103" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#9ca3af" text-anchor="middle">demand &gt; 1.4</text>
+
+  <text x="24" y="130" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#9ca3af">COST OF AN UNDETECTED ERROR</text>
+
+  <!-- row 1: oracle in the loop -->
+  <rect x="20" y="140" width="240" height="66" fill="#f9fafb" stroke="#e5e7eb"/>
+  <text x="34" y="167" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#111827">A check in the loop</text>
+  <text x="34" y="184" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#6b7280">tests, types, lint already running</text>
+  <rect x="260" y="140" width="170" height="66" fill="#0C8A6C" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="345" y="179" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0C8A6C" text-anchor="middle">Haiku</text>
+  <rect x="430" y="140" width="170" height="66" fill="#A87B0B" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="515" y="179" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#A87B0B" text-anchor="middle">Sonnet</text>
+  <rect x="600" y="140" width="170" height="66" fill="#CB4136" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="685" y="179" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#CB4136" text-anchor="middle">Opus</text>
+
+  <!-- row 2: no oracle -->
+  <rect x="20" y="206" width="240" height="66" fill="#f9fafb" stroke="#e5e7eb"/>
+  <text x="34" y="233" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#111827">Nothing checks it</text>
+  <text x="34" y="250" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#6b7280">ordinary code, small blast radius</text>
+  <rect x="260" y="206" width="170" height="66" fill="#0C8A6C" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="345" y="245" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0C8A6C" text-anchor="middle">Haiku</text>
+  <rect x="430" y="206" width="170" height="66" fill="#A87B0B" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="515" y="245" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#A87B0B" text-anchor="middle">Sonnet</text>
+  <rect x="600" y="206" width="170" height="66" fill="#CB4136" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="685" y="245" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#CB4136" text-anchor="middle">Opus</text>
+
+  <!-- row 3: risk surface, no check -->
+  <rect x="20" y="272" width="240" height="66" fill="#fef2f2" stroke="#e5e7eb"/>
+  <rect x="20" y="272" width="4" height="66" fill="#CB4136"/>
+  <text x="34" y="295" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#111827">Risk surface, no check</text>
+  <text x="34" y="311" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#6b7280">auth, payments, migrations, infra</text>
+  <text x="34" y="327" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#CB4136">FLOOR</text>
+  <rect x="260" y="272" width="170" height="66" fill="#A87B0B" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="345" y="311" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#A87B0B" text-anchor="middle">Sonnet</text>
+  <rect x="430" y="272" width="170" height="66" fill="#CB4136" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="515" y="311" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#CB4136" text-anchor="middle">Opus</text>
+  <rect x="600" y="272" width="170" height="66" fill="#CB4136" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="685" y="311" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#CB4136" text-anchor="middle">Opus</text>
+
+  <!-- row 4: irreversible -->
+  <rect x="20" y="338" width="240" height="66" fill="#fef2f2" stroke="#e5e7eb"/>
+  <rect x="20" y="338" width="4" height="66" fill="#CB4136"/>
+  <text x="34" y="361" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#111827">Irreversible next step</text>
+  <text x="34" y="377" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#6b7280">push, deploy, apply, MCP write</text>
+  <text x="34" y="393" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#CB4136">FLOOR</text>
+  <rect x="260" y="338" width="170" height="66" fill="#A87B0B" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="345" y="377" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#A87B0B" text-anchor="middle">Sonnet</text>
+  <rect x="430" y="338" width="170" height="66" fill="#A87B0B" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="515" y="377" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#A87B0B" text-anchor="middle">Sonnet</text>
+  <rect x="600" y="338" width="170" height="66" fill="#CB4136" fill-opacity="0.13" stroke="#e5e7eb"/>
+  <text x="685" y="377" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#CB4136" text-anchor="middle">Opus</text>
+
+  <text x="20" y="424" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#6b7280">A FLOOR is a veto: no cache-driven downgrade may cross it. Everything above is a prior from pick_tier_v2, not a tuned value.</text>
+</svg>

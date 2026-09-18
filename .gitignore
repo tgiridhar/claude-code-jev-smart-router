@@ -1,0 +1,17 @@
+# Router traces. These contain verbatim previews of your prompts.
+# Point ROUTER_TRACE_DIR somewhere outside this tree.
+*.jsonl
+traces/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets
+.env
+.env.local
+
+# macOS
+.DS_Store
