@@ -19,7 +19,9 @@ Routing those requests to a lower tier has three effects:
 | Usage limits | On a Pro, Max or Team subscription there is no per-token bill. Routing consumes less of the plan's allowance instead. |
 
 Classification adds one API call per routed request: a fraction of a cent, and
-well under a second of added latency.
+well under a second of added latency. That is small enough to sit in the request
+path, which is what makes per-request routing possible at all. See
+[The classifier](#the-classifier).
 
 ### Prompt cache constraint
 
@@ -50,6 +52,64 @@ Two modules:
 | --- | --- | --- |
 | `jev_ontology.py` | Fact extraction, the question set, the tier policy | stdlib only |
 | `jev_router.py` | The proxy, cache cost arithmetic, telemetry, dashboard | fastapi, httpx |
+
+## The classifier
+
+Per-request routing needs a classification step inside the request path. A
+general-purpose model prompted to classify would add seconds and a meaningful
+token bill to every request, which is most of what the routing is trying to save.
+
+Jev is a classification model rather than a generative one, served by TypeSafe at
+`api.typesafe.ai/v1/systemone`. Three properties are what make in-path use
+practical:
+
+**One round trip for the whole question set.** The extracted session facts and
+every question go in a single POST, and every answer comes back together. A user
+turn sends 15 questions; a mid-run recheck sends the 12 that do not depend on a
+new user message:
+
+```http
+POST https://api.typesafe.ai/v1/systemone
+Authorization: Bearer $TYPESAFE_API_KEY
+Content-Type: application/json
+
+{"model": "jev-latest",
+ "state": "<extracted session facts>",
+ "questions": { ... }}
+```
+
+**Typed answers, not prose to parse.** Each question declares its type and the
+response supplies that type directly. `choice` returns a label from the
+definition set supplied with the question, `score` returns an ordinal, and `noul`
+returns a likelihood between 0 and 1:
+
+```json
+{"answers": {
+   "phase":            {"choice": "debug", "confidence": 0.82},
+   "next_step_demand": {"score": 2,        "confidence": 0.71},
+   "risk_surface":     {"noul": 0.88,      "confidence": 0.90}
+ },
+ "usage": {"input_tokens": 501}}
+```
+
+(Abridged. Field names are as the router reads them; the values are
+illustrative.)
+
+**Per-answer confidence, used rather than displayed.** Every answer carries its
+own confidence. The router acts on it: when confidence in `phase` falls below
+`ROUTER_MIN_CONFIDENCE`, that answer is discarded and the deterministic
+tool-derived phase hint is used instead. The demand adjustments are gated the
+same way. An uncertain classifier degrades to the facts rather than guessing.
+
+This is also why the ontology asks many small questions instead of one "which
+model should serve this request". The model is calibrated per individual
+judgment, so decomposing the decision keeps each answer meaningful, and the
+weighing happens afterwards in `pick_tier_v2`, in code that can be read and
+changed.
+
+Failure is not fatal. The call has a timeout, and any error, timeout or
+non-200 response returns no answers, at which point the session keeps its current
+tier or the request forwards as received.
 
 ## Status
 
