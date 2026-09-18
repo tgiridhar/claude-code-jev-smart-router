@@ -3,47 +3,38 @@
 An HTTP proxy for Claude Code that selects the Claude model per request, to
 reduce cost and latency.
 
-## Why
+## Motivation
 
-A coding agent pins one model for an entire session. That model handles every
-step: the architectural decision and the `grep`, the security review and the
-commit message. Most steps in an agentic loop are not the hard part.
+Claude Code serves a session from one selected model, changing it only at fixed
+points (see [Routing logic](#routing-logic)) rather than according to what each
+request requires. That model handles every request in the agentic loop, including
+the ones that do not need it: file reads, greps, test runs, commit messages.
 
-**Cost.** Cheaper models are cheaper by a wide margin, per token, in both
-directions. Every step served by a cheaper model that did not need an expensive
-one is most of that step's cost avoided. Searching, reading a test result and
-writing a commit message are the common case in a long session, not the
-exception.
+Routing those requests to a lower tier has three effects:
 
-**Latency.** Smaller models return faster, so the same reasoning applies to
-wall-clock time. Effort level matters more than model choice here, since effort
-drives how many agentic turns a step takes. The proxy can lower effort on the
-current model instead of switching models, which cuts turns without invalidating
-the prompt cache.
+| Effect | Mechanism |
+| --- | --- |
+| Cost | Lower tiers have lower per-token prices, for input and output both. |
+| Latency | Smaller models return sooner. Separately, lower effort reduces the number of agentic turns a step takes. |
+| Usage limits | On a Pro, Max or Team subscription there is no per-token bill. Routing consumes less of the plan's allowance instead. |
 
-**Usage limits.** On a Pro, Max or Team subscription there is no bill to reduce.
-The same routing conserves usage limit instead, so a plan covers more work before
-it throttles.
+Classification adds one API call per routed request: a fraction of a cent, and
+well under a second of added latency.
 
-Classification costs a small fraction of a cent per request and adds well under a
-second to the turn.
+### Prompt cache constraint
 
-### Constraint: prompt caching
+Prompt caching limits how often switching is worthwhile. Each model has a
+separate cache, so a mid-conversation switch causes the new model to re-read the
+conversation prefix at full input price. In a long session that prefix accounts
+for most of the token volume, so switching on every request can cost more than
+using a single model throughout.
 
-Prompt caching is what makes naive per-request routing lose. Each model keeps its
-own cache, so switching mid-conversation makes the new model re-read the whole
-conversation prefix at full input price. On a long session that prefix is most of
-the token volume, and a router that switches on every turn can cost several times
-what pinning one model costs.
+The proxy prices each switch against the cache rebuild it would cause and applies
+it only when it pays back within a few turns. See
+[Cache management](#cache-management).
 
-So every switch is priced before it is made, and a switch that does not pay for
-itself within a few turns does not happen. Selecting the right model is the
-straightforward half of this; deciding whether moving to it is affordable is the
-rest.
-
-Savings here are unmeasured. The mechanism is sound, but whether routing wins on
-a particular workload depends on that workload.
-[Measure it](#measuring-cost-impact).
+Savings are unmeasured. Whether routing reduces cost on a given workload depends
+on that workload. See [Measuring cost impact](#measuring-cost-impact).
 
 ## How it works
 
