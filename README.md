@@ -160,52 +160,50 @@ passed all 20 tests, so that row says nothing about which model is better.
 ### Classifier comparison: Laya
 
 [Laya](https://laya.convaiinnovations.com/) (`convaiinnovations/laya`,
-ModernBERT-large 421M, Apache 2.0) is an open-weight System 1 engine with the
-same `choice` / `score` / `noul` primitives and a response envelope the proxy
-already parses. Swapping it in needs no change to the router: `TYPESAFE_URL`
-points at a local process that serves the same wire protocol.
+ModernBERT-large 421M, Apache 2.0) is an open-weight classifier with the same
+`choice` / `score` / `noul` primitives and the same response envelope. It runs
+locally. The proxy reads `TYPESAFE_URL` from the environment, so pointing it at
+a local Laya process requires no change to `jev_router.py`.
 
-**28% cheaper, 1.1x faster, against Jev's 72% and 2.1x.** Same ladder, same
-prices, same client model and effort; the only difference is which model
-answers the 15 questions. Quality was a tie, 5 of 6 tasks identical, with
-`secfind` at 5/6 against Jev's 6/6.
+```bash
+pip install laya
+python3 bench/laya_shim.py --port 8781 --ontology native
 
-The averages hide the shape of it:
+export TYPESAFE_URL=http://127.0.0.1:8781/v1/systemone
+export TYPESAFE_API_KEY=local       # unused by the shim, but an empty key disables classify()
+export ROUTER_CLASSIFY_TIMEOUT=20   # Laya needs ~1.9 s on CPU; the 2.0 s default times out
+export ROUTER_JEV_PRICE_IN=0        # self-hosted: no per-call price
+```
 
-| | analysis tasks | build tasks |
-| --- | --- | --- |
-| | `bugfind` `secfind` `algo` | `todo` `pelican` `datasci` |
-| Jev | 78% / 76% / 61% | 59% / 76% / 72% |
-| Laya | **78% / 80% / 68%** | **-22% / -53% / 0%** |
+Six tasks, one run each: **28% cheaper and 1.1x faster than pinned Opus,
+against Jev's 72% and 2.1x.** Five of six tasks scored identically; `secfind`
+was 5/6 against Jev's 6/6.
 
-Laya matches or beats Jev wherever the work is analysis, and gives all of it
-back on the three build tasks, where it escalates to Opus and produces the
-same artifact Jev produced on Sonnet. `pelican` is the clearest case: $0.09
-against $0.54, six times the cost for the same 5/5 drawing.
+Saving against pinned Opus, per task:
 
-Three caveats:
+| | `bugfind` | `secfind` | `algo` | `todo` | `pelican` | `datasci` |
+| --- | --- | --- | --- | --- | --- | --- |
+| Jev | 78% | 76% | 61% | 59% | 76% | 72% |
+| Laya | 78% | 80% | 68% | -22% | -53% | 0% |
 
-**It runs locally on CPU, and that is why it is slow.** These runs are on an
-Apple laptop with no CUDA, where one classification takes about 1.9 s against
-Jev's 275 ms over the network. Laya's published figure is 32.8 ms on a single
-GPU, so the latency column is a property of the host, not the model. Both arms
-were given a 20 s classify timeout so neither could be silently degraded: a
-timeout returns no answers and is indistinguishable from passthrough. On a GPU
-the speed number would improve and the cost number would not, because cost is
-decided by which rung it picks.
+Laya matches Jev on the analysis tasks and selects Opus on the build tasks,
+producing the artifact Jev produced on Sonnet.
 
-**Cost excludes the classifier.** A self-hosted model has no per-call price,
-so Laya's classifier line is $0 against Jev's $0.0087. Hardware is a real cost
-and is not a per-request one.
+Measurement conditions:
 
-**These are single runs against medians of three.** The tier-choice split
-above is structural and reproducible; the individual magnitudes are n=1.
+- CPU, no CUDA: 1.9 s per classification against Jev's 275 ms. Laya publishes
+  32.8 ms on one GPU. A GPU changes the latency column, not the saving column,
+  which depends only on which tier is selected.
+- `ROUTER_CLASSIFY_TIMEOUT=20` on both arms. `classify()` returns `None` on
+  timeout, which is indistinguishable from passthrough.
+- Classifier cost excluded: $0 self-hosted against Jev's $0.0087.
+- Single runs against medians of three.
 
-Laya is also strictly deterministic, 0.0000 confidence spread over five
-identical calls against Jev's 0.0117, which a local forward pass gets for free.
-Calibration, the layered validation of the integration itself, and a reworked
-question set that lifts Laya from 5/14 to 9/14 on labelled router states are in
-[bench/README.md](bench/README.md).
+On 14 labelled router states Laya scores 9/14 against Jev's 14/14, and its
+confidence does not separate correct answers from incorrect ones: correct at
+p=0.28-0.33, incorrect at p=0.80-0.89. Laya is deterministic, 0.0000
+confidence spread over five identical calls against Jev's 0.0117. Method and
+full results in [bench/README.md](bench/README.md).
 
 ### Task prompts
 
