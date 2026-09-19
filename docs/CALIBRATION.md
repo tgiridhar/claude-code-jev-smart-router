@@ -6,24 +6,50 @@ decides whether a case is handled or sent to a person, so it needs to mean what
 it says. This report measures whether it does. 80 labelled items with textbook
 ground truth, about 450 API calls, 2026-09-18, under five cents.
 
+## What a call looks like
+
+Three real items from the set, same question, same four options.
+
+```
+"A large tree rooted in soil that grows from an acorn and photosynthesises."
+  -> plant 1.00   fungus 0.00   animal 0.00   neither 0.00      correct
+
+"A long brown seaweed anchored to the sea bed that photosynthesises."
+  -> plant 0.75   neither 0.25  animal 0.00   fungus 0.00       WRONG, kelp is a chromist
+
+"An orange threadlike vine with almost no chlorophyll that wraps around
+ host plants and draws nutrients from them."
+  -> plant 0.44   fungus 0.43   neither 0.13  animal 0.00       correct, by one point
+```
+
+The oak is the easy case. Kelp is the dangerous one: confidently wrong, and 0.75
+is high enough that a naive threshold would have shipped it. Dodder is an honest
+coin flip and the model says so.
+
+Kelp reads 0.70 later in this report. Same request, a different call. That gap is
+finding 3.
+
 ## Findings
 
 **1. Accuracy was 95% on 80 labelled items.** Brier score 0.0379, expected
 calibration error 0.0407.
 
-> On 1,000 decisions a day that is roughly 50 wrong ones. Whether that is usable
-> depends on what a wrong decision costs: a misrouted ticket someone reassigns,
-> or a refund already paid out.
+> The four misses were kelp and a diatom called plants, a water mould called a
+> fungus, and an axolotl called a fish. All four are cases where the obvious
+> surface feature points the wrong way: kelp photosynthesises, a water mould
+> grows threads, an axolotl has gills.
 > **Ideal:** raw accuracy matters less than whether the model flags its own
-> mistakes, which is finding 5.
+> mistakes, which is finding 5. 95% with a reliable warning beats 98% without.
 
 **2. Predictions above 0.95 were correct 99% of the time. Predictions between
 0.70 and 0.85 were correct 40% of the time.**
 
 ![Stated probability against observed accuracy across four probability bands](img/reliability.svg)
 
-> The obvious threshold, act when the model is 70% sure, is the worst choice
-> available here. At a stated 0.77 it was wrong three times in five.
+> Every item in that band, in order: kelp 0.70 wrong, diatom 0.77 wrong, slime
+> mould 0.78 right, euglena 0.79 right, axolotl 0.79 wrong. The obvious
+> threshold, act when the model is 70% sure, would have shipped all three of
+> those errors.
 > **Ideal:** a curve that rises the whole way, so raising the bar is always
 > safer. This one dips in the middle, which means you cannot pick a threshold by
 > intuition. Measure it on your own data before wiring it to anything.
@@ -32,10 +58,10 @@ calibration error 0.0407.
 0.03. The selected option changed only when the top two options sat within about
 0.06 of each other.
 
-> Send the same case twice and you get a different number. A rule like "escalate
-> below 0.75" fires inconsistently for anything sitting near 0.75. One item whose
-> top two options were 0.06 apart answered `fungus` 16 times and `plant` 4 times
-> across 20 identical calls.
+> Send the same case twice and you get a different number. The dodder above sits
+> at plant 0.44 against fungus 0.43. Across 20 byte-identical calls it answered
+> `fungus` 16 times and `plant` 4 times. A rule like "escalate below 0.75" fires
+> inconsistently for anything parked near 0.75.
 > **Ideal:** a seed parameter for reproducible runs. Until then keep thresholds
 > at least 0.1 clear of where your traffic clusters, and never treat the
 > probability as a stable value to cache, diff or key on.
@@ -45,9 +71,12 @@ calibration error 0.0407.
 
 ![Spread across four option orderings plotted against item uncertainty](img/ordering.svg)
 
-> If the criteria map is built from a database query, a Python set, or JSON from
-> a source you do not control, the option order can change between deploys and
-> the answers change with it. Nothing errors and no test fails.
+> The worst case was a calzone, asked whether it is a sandwich, wrap, taco,
+> pastry or none of these. Across four orderings of those same five options its
+> probability of `pastry` read 0.75, 0.57, 0.67 and 0.77. If the criteria map is
+> built from a database query, a Python set, or JSON from a source you do not
+> control, that order can change between deploys. Nothing errors and no test
+> fails.
 > **Ideal:** order invariance. Until then, freeze the option order as part of the
 > prompt version and re-validate when it changes, like any other config.
 
@@ -55,9 +84,10 @@ calibration error 0.0407.
 of the four errors were the same mistake: a protist filed as a plant or a fungus.
 
 > Confidence is a good triage signal. Reviewing the 11% of cases that fell below
-> 0.95 catches three of the four errors. But the errors cluster rather than
-> scatter, so a random 10% audit would probably miss the pattern while an audit
-> grouped by output category finds it at once.
+> 0.95 catches three of the four errors. But kelp, the diatom and the water mould
+> are one mistake repeated: a protist that looks like a plant or a fungus. A
+> random 10% audit would probably see one of them and call it bad luck. An audit
+> grouped by predicted category shows three in a row.
 > **Ideal:** errors spread randomly, which is what sampling assumes. Clustered
 > errors mean one blind spot can take out an entire class of input.
 
@@ -98,7 +128,7 @@ per request.
 
 Repeat variation came from 20 byte-identical requests per item. Sensitivity came
 from changing one element of the request at a time, 3 repeats per condition,
-compared against the 0.06 noise floor that variation implies.
+measured against the 0.06 noise floor that variation implies.
 
 ## Limits
 
