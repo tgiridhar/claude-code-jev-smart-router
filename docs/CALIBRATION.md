@@ -19,15 +19,21 @@ Three real items from the set, same question, same four options.
 
 "An orange threadlike vine with almost no chlorophyll that wraps around
  host plants and draws nutrients from them."
-  -> plant 0.44   fungus 0.43   neither 0.13  animal 0.00       correct, by one point
+  -> plant 0.44   fungus 0.43   neither 0.13  animal 0.00       coin flip
+  -> fungus 0.47  plant 0.42    neither 0.11  animal 0.00       same request, later call
 ```
 
 The oak is the easy case. Kelp is the dangerous one: confidently wrong, and 0.75
-is high enough that a naive threshold would have shipped it. Dodder is an honest
-coin flip and the model says so.
+is high enough that a naive threshold would have shipped it.
 
-Kelp reads 0.70 later in this report. Same request, a different call. That gap is
-finding 3.
+Dodder is a genuine coin flip and the model says so. The two lines above are the
+same request sent twice. Over 20 identical calls it answered `fungus` 16 times
+and `plant` 4 times, so the correct answer is the one it usually misses. Both the
+instability and the near-tie are visible in the distribution before the answer is
+used for anything.
+
+Kelp reads 0.70 later in this report. Same request, a different call, same
+effect.
 
 ## Findings
 
