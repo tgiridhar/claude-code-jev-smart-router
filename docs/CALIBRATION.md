@@ -10,13 +10,15 @@ machine could have done. So the cutoff is only as good as the probability, and
 the probability is only useful if 0.75 really does mean right about three times
 in four.
 
-This report tests that on 80 questions with known answers. About 450 API calls
-on 2026-09-18, costing under five cents in total.
+This report tests that on 80 questions with known answers, using about 500 API
+calls on 2026-09-18 and costing under five cents in total. The Method section
+breaks down where the calls went.
 
 ## The test
 
-Every call sends the same question and the same four options. Only the
-description of the organism changes.
+The organism set is 35 of the 80 items. Every call in it sends the same question
+and the same four options; only the description changes. The other 45 items ask
+about substances and about vertebrates, with their own option sets.
 
 ```json
 {"model": "jev-latest",
@@ -61,14 +63,17 @@ Three of the 80 descriptions, and what came back:
 > is about to be wrong, which is finding 5. 95% with a reliable warning is worth
 > more than 98% without one.
 
-**2. When it reported above 0.95 it was right 99% of the time. When it reported
-between 0.70 and 0.85 it was right 40% of the time.**
+**2. When it reported 0.95 or above it was right 70 times out of 71. When it
+reported between 0.70 and 0.85 it was right 2 times out of 5.**
 
 ![Stated probability against observed accuracy across four probability bands](img/reliability.svg)
 
-> The five items in that 0.70 to 0.85 band: kelp 0.70 wrong, diatom 0.77 wrong,
-> slime mould 0.78 right, euglena 0.79 right, axolotl 0.79 wrong. A cutoff of 0.7
-> would have let all three errors through.
+> All four bands, with every item counted: 0.95 and above, 70 of 71 right. 0.85
+> to 0.95, 3 of 3 right. 0.70 to 0.85, 2 of 5 right. Below 0.50, 1 of 1 right,
+> which was dodder.
+> The five in the failing band: kelp 0.70 wrong, diatom 0.77 wrong, slime mould
+> 0.78 right, euglena 0.79 right, axolotl 0.79 wrong. A cutoff of 0.7 lets all
+> three errors through.
 > **Ideal:** accuracy that climbs steadily with the stated probability, so
 > raising the cutoff is always safer. This one dips in the middle, so you cannot
 > reason your way to a cutoff. Measure it on your own data.
@@ -86,7 +91,8 @@ between 0.70 and 0.85 it was right 40% of the time.**
 > anywhere that assumes it is fixed.
 
 **4. Listing the same options in a different order changes the probability by up
-to 0.31.** Rewording the question changes nothing measurable.
+to 0.31.** Five rewordings of the question moved it by 0.05 or less, which is
+inside run-to-run noise.
 
 ![Spread across four option orderings plotted against item uncertainty](img/ordering.svg)
 
@@ -124,10 +130,13 @@ the higher probability in 96% of such pairs.**
 | axolotl | a salamander that keeps its gills for life | fish | amphibian | 0.79 | yes |
 | water mould | a thread-growing organism that rots potatoes | fungus | neither | **0.96** | no |
 
-Kelp, the diatom and the water mould belong to none of the three kingdoms
-offered, and each was filed under the kingdom its appearance suggests. The water
-mould is the dangerous one: at 0.96 it sits above any cutoff you would plausibly
-set, so no threshold catches it.
+Kelp, the diatom and the water mould belong to none of the kingdoms offered, and
+each was filed under the kingdom its appearance suggests rather than `neither`.
+
+The water mould is the expensive one. A cutoff of 0.99 does stop it, which is why
+the top row of the table below ships no errors, but that cutoff sends a quarter
+of everything to a person. Anywhere between 0.95 and 0.99 the model is wrong and
+gives no sign of it.
 
 One of the 76 correct answers deserves an asterisk. Dodder was scored right, but
 across 20 identical calls it gave the right answer 4 times. Had the run drawn one
@@ -138,17 +147,23 @@ of the other 16, this report would say 75 of 80.
 Cases at or above the cutoff are handled automatically. Everything below goes to
 a person.
 
-| Cutoff | Handled automatically | Accuracy on those | Sent to a person | Wrong answers shipped |
+| Cutoff | Handled automatically | Correct | Sent to a person | Wrong answers shipped |
 | --- | --- | --- | --- | --- |
-| 0.99 | 75% | **100%** | 25% | **0** |
-| 0.95 | 89% | 98.6% | 11% | 1 |
-| 0.85 | 92% | 98.6% | 8% | 1 |
-| 0.70 | 99% | 94.9% | 1% | 4 |
+| 0.99 | 60 of 80 (75%) | **60 of 60** | 20 | **0** |
+| 0.95 | 71 of 80 (89%) | 70 of 71 | 9 | 1 |
+| 0.85 | 74 of 80 (92%) | 73 of 74 | 6 | 1 |
+| 0.70 | 79 of 80 (99%) | 75 of 79 | 1 | 4 |
 
-At 0.99 the model handled three cases in four and got every one of them right.
-Moving down to 0.95 covers 14 more cases out of 100 and lets one wrong answer
-through. Moving from 0.85 to 0.70 covers 7 more and lets three more through, so
-most of what that last step buys is errors.
+At 0.99 the model handled 60 of the 80 and got every one right, leaving 20 for a
+person.
+
+On this data **0.85 beats 0.95 outright**: it handles 3 more items, with the same
+single error. The one error above 0.85 is the water mould at 0.96, so raising the
+bar from 0.85 to 0.95 excludes 3 correct answers and no wrong ones. If that holds
+on your own data, a cutoff at 0.95 costs volume and buys nothing.
+
+Dropping from 0.85 to 0.70 takes in 5 more items, of which 3 are wrong, so most
+of what that step buys is errors.
 
 ## Method
 
@@ -160,10 +175,16 @@ on its own, one question per request.
 The option-order test in finding 4 used a separate set of 12 items, including
 foods, because those produced more genuinely uncertain answers to move.
 
-Run-to-run variation came from sending 20 byte-identical requests per item, which
-gave a spread of about 0.03 and set 0.06 as the size below which a change means
-nothing. Every sensitivity test changed one element of the request at a time, 3
-repeats each, and was compared against that 0.06.
+Run-to-run variation was measured on selected items rather than all 80: 20
+byte-identical requests each for five items whose top two options were close.
+That gave a spread of about 0.03, which sets 0.06 as the size below which a
+change means nothing.
+
+Every sensitivity test changed one element of the request at a time, 3 repeats
+per condition, compared against that 0.06. The roughly 500 calls break down as
+80 baseline calls, about 100 repeat calls, 144 for the ordering test (12 items,
+4 orderings, 3 repeats), 45 for a batching comparison, and the rest for the
+wording and option-set conditions.
 
 Two standard scores, for anyone who wants them.
 
