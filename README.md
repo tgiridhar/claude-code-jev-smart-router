@@ -14,6 +14,11 @@ Opus met, at 72% lower cost and 2.1x faster. Tasks included finding planted
 defects, finding planted vulnerabilities, passing a hidden test suite, and
 building applications that were then driven in a browser. [Results](#results).
 
+The same six tasks run against [Laya](https://laya.convaiinnovations.com/), an
+open-weight classifier with the same three primitives, save 28% at 1.1x. It
+matches Jev on the analysis tasks and loses money on the build tasks.
+[Comparison](#classifier-comparison-laya).
+
 ## Classification
 
 The classifier is [Jev](https://console.typesafe.ai), from TypeSafe. It is a
@@ -124,15 +129,15 @@ Six tasks, three runs each against pinned Opus, 63 runs in total. Claude Code wa
 configured with Opus throughout; the proxy decided what actually served each
 request. Medians of three runs.
 
-| Task | Req. met, Opus | Req. met, Router | Cost, Opus | Cost, Router | Saving | Time, Opus | Time, Router | Faster |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `bugfind` find 6 planted defects in an order and refund module | 6/6 | **6/6** | $0.5486 | **$0.1196** | **78%** | 122 s | **50 s** | **2.5x** |
-| `secfind` find 6 planted vulnerabilities in a Flask service | 6/6 | **6/6** | $0.5045 | **$0.1194** | **76%** | 120 s | **38 s** | **3.1x** |
-| `algo` implement a prose spec, graded by 20 hidden tests | 20/20 | **20/20** | $0.2748 | **$0.1082** | **61%** | 48 s | **37 s** | **1.3x** |
-| `todo` build a to-do app in one self-contained HTML file | 9/9 | **9/9** | $0.2662 | **$0.1094** | **59%** | 38 s | **30 s** | **1.3x** |
-| `pelican` draw a pelican riding a bicycle as hand-authored SVG | 5/5 | **5/5** | $0.3565 | **$0.0872** | **76%** | 91 s | **23 s** | **3.9x** |
-| `datasci` generate 5000 rows of sales data, analyse it, write it up | 10/10 | **10/10** | $0.8573 | **$0.2432** | **72%** | 192 s | **107 s** | **1.8x** |
-| **All six** | | | **$2.81** | **$0.79** | **72%** | **610 s** | **284 s** | **2.1x** |
+| Task | Req. met, Opus | Req. met, Router | Cost, Opus | Cost, Router | Saving | Time, Opus | Time, Router | Faster | Cost, Laya | Saving, Laya |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `bugfind` find 6 planted defects in an order and refund module | 6/6 | **6/6** | $0.5486 | **$0.1196** | **78%** | 122 s | **50 s** | **2.5x** | $0.1196 | **78%** |
+| `secfind` find 6 planted vulnerabilities in a Flask service | 6/6 | **6/6** | $0.5045 | **$0.1194** | **76%** | 120 s | **38 s** | **3.1x** | $0.1007 | **80%** |
+| `algo` implement a prose spec, graded by 20 hidden tests | 20/20 | **20/20** | $0.2748 | **$0.1082** | **61%** | 48 s | **37 s** | **1.3x** | $0.0884 | **68%** |
+| `todo` build a to-do app in one self-contained HTML file | 9/9 | **9/9** | $0.2662 | **$0.1094** | **59%** | 38 s | **30 s** | **1.3x** | $0.3305 | -22% |
+| `pelican` draw a pelican riding a bicycle as hand-authored SVG | 5/5 | **5/5** | $0.3565 | **$0.0872** | **76%** | 91 s | **23 s** | **3.9x** | $0.5443 | -53% |
+| `datasci` generate 5000 rows of sales data, analyse it, write it up | 10/10 | **10/10** | $0.8573 | **$0.2432** | **72%** | 192 s | **107 s** | **1.8x** | $0.8566 | 0% |
+| **All six** | | | **$2.81** | **$0.79** | **72%** | **610 s** | **284 s** | **2.1x** | **$2.04** | **28%** |
 
 How each task is scored:
 
@@ -151,6 +156,56 @@ Opus met every requirement in all 18 of its runs.
 
 `algo` turned out too easy to tell the models apart. Even the cheapest model
 passed all 20 tests, so that row says nothing about which model is better.
+
+### Classifier comparison: Laya
+
+[Laya](https://laya.convaiinnovations.com/) (`convaiinnovations/laya`,
+ModernBERT-large 421M, Apache 2.0) is an open-weight System 1 engine with the
+same `choice` / `score` / `noul` primitives and a response envelope the proxy
+already parses. Swapping it in needs no change to the router: `TYPESAFE_URL`
+points at a local process that serves the same wire protocol.
+
+**28% cheaper, 1.1x faster, against Jev's 72% and 2.1x.** Same ladder, same
+prices, same client model and effort; the only difference is which model
+answers the 15 questions. Quality was a tie, 5 of 6 tasks identical, with
+`secfind` at 5/6 against Jev's 6/6.
+
+The averages hide the shape of it:
+
+| | analysis tasks | build tasks |
+| --- | --- | --- |
+| | `bugfind` `secfind` `algo` | `todo` `pelican` `datasci` |
+| Jev | 78% / 76% / 61% | 59% / 76% / 72% |
+| Laya | **78% / 80% / 68%** | **-22% / -53% / 0%** |
+
+Laya matches or beats Jev wherever the work is analysis, and gives all of it
+back on the three build tasks, where it escalates to Opus and produces the
+same artifact Jev produced on Sonnet. `pelican` is the clearest case: $0.09
+against $0.54, six times the cost for the same 5/5 drawing.
+
+Three caveats:
+
+**It runs locally on CPU, and that is why it is slow.** These runs are on an
+Apple laptop with no CUDA, where one classification takes about 1.9 s against
+Jev's 275 ms over the network. Laya's published figure is 32.8 ms on a single
+GPU, so the latency column is a property of the host, not the model. Both arms
+were given a 20 s classify timeout so neither could be silently degraded: a
+timeout returns no answers and is indistinguishable from passthrough. On a GPU
+the speed number would improve and the cost number would not, because cost is
+decided by which rung it picks.
+
+**Cost excludes the classifier.** A self-hosted model has no per-call price,
+so Laya's classifier line is $0 against Jev's $0.0087. Hardware is a real cost
+and is not a per-request one.
+
+**These are single runs against medians of three.** The tier-choice split
+above is structural and reproducible; the individual magnitudes are n=1.
+
+Laya is also strictly deterministic, 0.0000 confidence spread over five
+identical calls against Jev's 0.0117, which a local forward pass gets for free.
+Calibration, the layered validation of the integration itself, and a reworked
+question set that lifts Laya from 5/14 to 9/14 on labelled router states are in
+[bench/README.md](bench/README.md).
 
 ### Task prompts
 

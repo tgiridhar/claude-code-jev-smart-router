@@ -91,10 +91,22 @@ def child_env(base_url, extra=None):
     return e
 
 
-def router_env(arm, trace_dir):
+def router_env(arm, trace_dir, laya_ports=None):
     e = {k: v for k, v in os.environ.items() if not k.startswith("ROUTER_")}
     e.update(arm.env())
     e["ROUTER_TRACE_DIR"] = trace_dir
+    onto = getattr(arm, "uses_laya", None)
+    if onto:
+        laya_port = (laya_ports or {}).get(onto)
+        if not laya_port:
+            raise RuntimeError(
+                f"{arm.name} needs a laya shim with --ontology {onto}, none started")
+        # The one line that swaps the classifier. jev_router.py:75 reads this,
+        # so nothing in the router changes for a Laya run.
+        e["TYPESAFE_URL"] = f"http://127.0.0.1:{laya_port}/v1/systemone"
+        # classify() returns None without a key (jev_router.py:479) and the
+        # arm would degrade to passthrough. The shim ignores the value.
+        e.setdefault("TYPESAFE_API_KEY", "local-shim")
     return e
 
 
@@ -108,12 +120,13 @@ def free_port():
 # router lifecycle
 # ---------------------------------------------------------------------------
 
-def start_router(arm, port, trace_dir, log_path):
+def start_router(arm, port, trace_dir, log_path, laya_ports=None):
     log = open(log_path, "wb")
     p = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "jev_router:app",
          "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
-        cwd=REPO, env=router_env(arm, trace_dir), stdout=log, stderr=subprocess.STDOUT,
+        cwd=REPO, env=router_env(arm, trace_dir, laya_ports),
+        stdout=log, stderr=subprocess.STDOUT,
     )
     for _ in range(120):
         if p.poll() is not None:
@@ -130,6 +143,66 @@ def start_router(arm, port, trace_dir, log_path):
     p.kill()
     log.close()
     raise RuntimeError("router did not become ready within 30s")
+
+
+def start_laya_shim(log_path, ontology="jev"):
+    """Start the local Laya classifier and wait for it to be ready.
+
+    One shim serves the whole matrix, unlike the router, which gets a fresh
+    process per run. The isolation rule that forces that exists because the
+    router carries process-global state across runs: _metrics, the _out_rate
+    EMA, the _memo, and the effort off-latch. The shim carries none. Every
+    request is one stateless forward pass, so a shared process cannot leak
+    routing behaviour between runs.
+
+    It is shared because it cannot cheaply not be: loading ModernBERT-large
+    takes ~35 s, which per run would cost more wall clock than the runs.
+
+    Needs a Python with laya installed, which is usually not the one running
+    this harness (the router needs no torch). Point LAYA_PYTHON at it.
+    """
+    py = os.environ.get("LAYA_PYTHON") or sys.executable
+    port = free_port()
+    log = open(log_path, "wb")
+    argv = [py, os.path.join(BENCH, "laya_shim.py"), "--port", str(port),
+            "--ontology", ontology]
+    p = subprocess.Popen(argv, cwd=REPO, stdout=log, stderr=subprocess.STDOUT)
+    print(f"  starting laya shim [{ontology}] on :{port} "
+          f"({os.path.basename(py)}), loading checkpoint...")
+    for _ in range(600):  # the checkpoint load dominates; allow 5 min
+        if p.poll() is not None:
+            log.close()
+            raise RuntimeError(
+                f"laya shim exited with code {p.returncode} before becoming ready.\n"
+                f"See {log_path}\n"
+                f"If it is a missing module, set LAYA_PYTHON to a interpreter with "
+                f"'pip install laya'.")
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as r:
+                if json.loads(r.read()).get("ready"):
+                    print(f"  laya shim [{ontology}] ready on :{port}")
+                    return p, log, port
+        except Exception:
+            time.sleep(0.5)
+    p.kill()
+    log.close()
+    raise RuntimeError("laya shim did not become ready within 5 min")
+
+
+def stop_laya_shim(p, log, port):
+    stats = None
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=5) as r:
+            stats = json.loads(r.read())
+    except Exception:
+        pass
+    p.terminate()
+    try:
+        p.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        p.kill()
+    log.close()
+    return stats
 
 
 def get_json(port, path):
@@ -184,7 +257,7 @@ def claude_argv(task, arm, session_id):
     ]
 
 
-def one_run(task, arm, rep, stamp_dir, dry_run=False):
+def one_run(task, arm, rep, stamp_dir, dry_run=False, laya_ports=None):
     run_id = f"{task.name}__{arm.name}__{rep}"
     rd = os.path.join(stamp_dir, run_id)
     work = os.path.join(rd, "work")
@@ -222,7 +295,7 @@ def one_run(task, arm, rep, stamp_dir, dry_run=False):
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    proc, log = start_router(arm, port, traces, os.path.join(rd, "router.log"))
+    proc, log = start_router(arm, port, traces, os.path.join(rd, "router.log"), laya_ports)
     t0 = time.time()
     envelope, timed_out, stderr_tail = None, False, ""
     try:
@@ -287,6 +360,9 @@ def main():
     ap.add_argument("--tasks", default="", help="comma separated task names (default: all)")
     ap.add_argument("--arms", default="", help="comma separated arm names (default: the 4 main arms)")
     ap.add_argument("--pilot", action="store_true", help=f"shorthand for --tasks {','.join(tasks_mod.PILOT)}")
+    ap.add_argument("--classifier", action="store_true",
+                    help=f"shorthand for --arms {','.join(arms_mod.CLASSIFIER)} "
+                         "(Jev vs Laya on the same ladder)")
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--dry-run", action="store_true",
                     help="print the exact command line and env for every cell, run nothing")
@@ -295,7 +371,8 @@ def main():
 
     names = tasks_mod.PILOT if a.pilot else (
         [s.strip() for s in a.tasks.split(",") if s.strip()] or list(tasks_mod.BY_NAME))
-    arm_names = [s.strip() for s in a.arms.split(",") if s.strip()] or list(arms_mod.MAIN)
+    arm_names = ([s.strip() for s in a.arms.split(",") if s.strip()]
+                 or (list(arms_mod.CLASSIFIER) if a.classifier else list(arms_mod.MAIN)))
 
     unknown = [n for n in names if n not in tasks_mod.BY_NAME] + \
               [n for n in arm_names if n not in arms_mod.BY_NAME]
@@ -336,13 +413,30 @@ def main():
         return
 
     print(f"writing to bench/runs/{stamp}/\n")
-    for i, (t, arm, rep) in enumerate(cells, 1):
-        print(f"[{i}/{len(cells)}] {t.name} / {arm.name}")
-        try:
-            one_run(t, arm, rep, stamp_dir)
-        except Exception as e:
-            print(f"  FAILED: {type(e).__name__}: {e}")
-        time.sleep(2)
+
+    # One shim for the whole matrix; see start_laya_shim for why sharing is
+    # safe here but not for the router.
+    shims = {}
+    for onto in sorted({x.uses_laya for x in sel_arms if getattr(x, "uses_laya", None)}):
+        shims[onto] = start_laya_shim(
+            os.path.join(stamp_dir, f"laya_shim_{onto}.log"), onto)
+    laya_ports = {k: v[2] for k, v in shims.items()}
+
+    try:
+        for i, (t, arm, rep) in enumerate(cells, 1):
+            print(f"[{i}/{len(cells)}] {t.name} / {arm.name}")
+            try:
+                one_run(t, arm, rep, stamp_dir, laya_ports=laya_ports)
+            except Exception as e:
+                print(f"  FAILED: {type(e).__name__}: {e}")
+            time.sleep(2)
+    finally:
+        for onto, sh in shims.items():
+            stats = stop_laya_shim(*sh)
+            if stats:
+                write(os.path.join(stamp_dir, f"laya_shim_stats_{onto}.json"), stats)
+                print(f"\nlaya shim [{onto}]: {stats.get('calls')} calls, "
+                      f"{stats.get('avg_ms')} ms avg, {stats.get('errors')} errors")
 
     print(f"\ndone. collect with:\n  python3 bench/collect.py {stamp}")
 

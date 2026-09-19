@@ -35,13 +35,32 @@ OPUS = "claude-opus-5"
 PRICED = {}
 
 
+# Both classifier arms get a classify timeout well above either engine's
+# latency, so neither can be silently degraded by a timeout.
+#
+# classify() swallows a timeout and returns None (jev_router.py:519), which is
+# indistinguishable from passthrough: the arm keeps running and quietly stops
+# being a routed arm at all. Jev answers in ~275 ms over the network and never
+# approaches the 2.0 s default. Laya, running on CPU/MPS on this machine, takes
+# ~2.1-3.0 s per call and would time out on nearly every request. That is
+# hardware, not the model: Laya's published figure is 32.8 ms on a single GPU.
+#
+# Raising the ceiling for both arms measures classification quality rather than
+# the host's torch throughput. Latency is reported separately instead of being
+# allowed to silently null out one arm's classifier.
+CLASSIFY_TIMEOUT = {"ROUTER_CLASSIFY_TIMEOUT": "20"}
+
+
 class Arm:
-    def __init__(self, name, model, router_env, needs_key, note):
+    def __init__(self, name, model, router_env, needs_key, note, uses_laya=None):
         self.name = name
         self.model = model          # what the client asks for
         self.router_env = router_env
         self.needs_key = needs_key  # does this arm need TYPESAFE_API_KEY
         self.note = note
+        # None, or the laya_shim --ontology this arm needs ("jev" | "native").
+        # run_bench starts one shim per distinct value.
+        self.uses_laya = uses_laya
 
     def env(self):
         e = {"ROUTER_SENTINEL": "", "ROUTER_LOG_LEVEL": "INFO"}
@@ -74,10 +93,56 @@ ARMS = [
         router_env={
             "ROUTER_ENABLED": "1",
             "ROUTER_TIERS": f'["{HAIKU}","{SONNET}","{OPUS}"]',
+            **CLASSIFY_TIMEOUT,
             **PRICED,
         },
         needs_key=True,
         note="The shipped default ladder, on corrected prices.",
+    ),
+    Arm(
+        "router-3tier-laya-native",
+        model="opus",
+        router_env={
+            "ROUTER_ENABLED": "1",
+            "ROUTER_TIERS": f'["{HAIKU}","{SONNET}","{OPUS}"]',
+            "TYPESAFE_MODEL": "laya-native",
+            "ROUTER_JEV_PRICE_IN": "0",
+            **CLASSIFY_TIMEOUT,
+            **PRICED,
+        },
+        needs_key=False,
+        uses_laya="native",
+        note=("Same Laya checkpoint, same ladder, but the router's questions "
+              "and state are re-projected into laya's own documented idiom by "
+              "bench/laya_native.py: instructions that name the state field "
+              "they are about, option descriptions written as observable "
+              "evidence, and a compact structured state. Question ids, types "
+              "and choice option keys are unchanged, so the router's policy "
+              "engine is untouched. Raises calibration accuracy from 5/14 to "
+              "9/14; see bench/calibrate_classifier.py."),
+    ),
+    Arm(
+        "router-3tier-laya",
+        model="opus",
+        router_env={
+            "ROUTER_ENABLED": "1",
+            "ROUTER_TIERS": f'["{HAIKU}","{SONNET}","{OPUS}"]',
+            # TYPESAFE_URL is injected by run_bench once the shim has a port.
+            "TYPESAFE_MODEL": "laya",
+            # A self-hosted model has no per-call price. Hardware cost is real
+            # but is not a per-request cost and does not belong in the
+            # classifier column, which exists to be compared against the
+            # inference it routes.
+            "ROUTER_JEV_PRICE_IN": "0",
+            **CLASSIFY_TIMEOUT,
+            **PRICED,
+        },
+        needs_key=False,  # talks to the local shim, not api.typesafe.ai
+        uses_laya="jev",
+        note=("Identical ladder to router-3tier; only the classifier differs. "
+              "Laya (convaiinnovations/laya, ModernBERT-large 421M, Apache 2.0) "
+              "served locally by bench/laya_shim.py on the TypeSafe wire "
+              "protocol, so the router itself is unmodified."),
     ),
     Arm(
         "router-haiku-opus",
@@ -112,3 +177,11 @@ RETIRED = ["router-haiku-opus"]
 # on top. The arm definition stays for reproducibility; pass it explicitly with
 # --arms if you want to re-measure it.
 MAIN = ["control-opus", "control-haiku", "router-3tier"]
+
+# Classifier comparison: one ladder, two engines deciding it. Both arms are
+# ROUTER_ENABLED=1 on the same three rungs with the same prices and the same
+# timeout, so the only difference between them is which model answers the 15
+# questions. No pinned controls: the question here is not what routing is worth
+# against a fixed model, which MAIN already answers, but whether Jev and Laya
+# route the same work the same way.
+CLASSIFIER = ["router-3tier", "router-3tier-laya", "router-3tier-laya-native"]
