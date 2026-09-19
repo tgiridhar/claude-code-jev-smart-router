@@ -46,25 +46,12 @@ Content-Type: application/json
  "usage": {"input_tokens": 501}}
 ```
 
-`choice` returns a label from the set supplied with the question, `score` an
-ordinal, `noul` a likelihood between 0 and 1. Each answer carries its own
-confidence.
+`choice` returns a label, `score` an ordinal, `noul` a probability, each with its
+own confidence. One call takes 256 ms and costs $0.000081; classifying the whole
+benchmark cost $0.0087 to route $21.77 of work.
 
-One decision takes 256 ms and costs $0.000081. Across the benchmark,
-classification cost $0.0087 to route $21.77 of work.
-
-Per-request routing requires the classification to cost materially less than the
-request it routes. A general-purpose model prompted to classify adds seconds of
-latency and a token bill to every request.
-
-Confidence is applied rather than reported. When confidence in `phase` falls
-below `ROUTER_MIN_CONFIDENCE` the answer is discarded and the tool-derived phase
-hint is used instead; demand adjustments are gated the same way. The decision is
-split into many small questions because the model is calibrated per individual
-judgment; they are combined in `pick_tier_v2`.
-
-Any error, timeout or non-200 response returns no answers, at which point the
-session keeps its current tier or the request forwards as received.
+An answer below `ROUTER_MIN_CONFIDENCE` is discarded for the tool-derived phase
+hint, and any error or timeout returns no answers, leaving the request unchanged.
 
 ## Installation
 
